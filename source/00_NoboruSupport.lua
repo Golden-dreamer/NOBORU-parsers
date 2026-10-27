@@ -460,13 +460,13 @@ for c in string.gmatch('АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪ
 for c in string.gmatch('абвгдеёжзийклмнопрстуфхцчшщъыьэюя','[%z\1-\127\194-\244][\128-\191]*') do lower[#lower+1]=c end
 for i,c in ipairs(upper) do lowercase[c]=lower[i] end
 function U.fold(s)
- return (s:lower():gsub('[\194-\244][\128-\191]+',function(c) return lowercase[c] or c end))
+ return (s:gsub('[A-Z]',function(c) return string.char(c:byte()+32) end):gsub('[\194-\244][\128-\191]+',function(c) return lowercase[c] or c end))
 end
 function U.options(terms,query)
  local result={}
  query=U.fold(query or '')
  for i,t in ipairs(terms) do
-  if U.fold(t.name):find(query,1,true) then
+  if U.fold(t.name):find(query,1,true)==1 then
    result[#result+1]={Name=t.name,Value=t.slug}
    if #result>=101 then break end
   end
@@ -499,7 +499,7 @@ function U.termOptions(content,query)
     if string.unpack then text=string.unpack('c'..(i-objectStart+1),content,objectStart)
     else local chars={};for j=objectStart,i do chars[#chars+1]=string.char(content:byte(j)) end;text=table.concat(chars) end
     local term=U.decodeJSON(text)
-    if type(term.name)=='string' and type(term.slug)=='string' and U.fold(term.name):find(query,1,true) then
+    if type(term.name)=='string' and type(term.slug)=='string' and U.fold(term.name):find(query,1,true)==1 then
      result[#result+1]={Name=term.name,Value=term.slug}
      if #result>=101 then return result end
     end

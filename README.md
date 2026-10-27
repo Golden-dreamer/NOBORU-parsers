@@ -167,7 +167,7 @@ For a large or remotely searched dictionary:
 }
 ```
 
-`Search` is a plain function, not a method; it may yield and use the shared request helpers. Return up to 101 matches: the panel shows at most 100 new options, with the extra match indicating that the query should be refined. Already selected options and their `Values[name]` are retained. Read those values when building the site's actual query; do not assume that different sites share a tag-search syntax. Radio filters can use `EmptyOption` for a neutral choice. `Prefix=true` labels a search that only matches the beginning of a name.
+`Search` is a plain function, not a method; it may yield and use the shared request helpers. Return up to 101 matches: the panel shows at most 100 new options, with the extra match indicating that the query should be refined. Already selected options and their `Values[name]` are retained. Read those values when building the site's actual query; do not assume that different sites share a tag-search syntax. Radio filters can use `EmptyOption` for a neutral choice. Option searches match the beginning of the name, ignoring ASCII and Russian letter case. Active options remain above the search row regardless of the query; recently disabled options follow them so they can be restored. Selecting an active radio option clears it when the filter defines `EmptyOption`.
 
 All expanded filters have an in-list search row. Local filtering retains original option indexes. For large dictionaries, `NoboruSupport.termOptions(content, query)` scans a JSON `terms` array of `{name, slug, ...}` records without materializing the whole dictionary as Lua tables.
 

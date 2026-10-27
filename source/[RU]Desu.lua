@@ -1,4 +1,4 @@
-Desu = Parser:new("Desu", "https://desu.uno", "RUS", "DESURU", 10)
+Desu = Parser:new("Desu", "https://desu.uno", "RUS", "DESURU", 11)
 
 Desu.Filters = {
 	{
@@ -172,20 +172,69 @@ end
 function Desu:getPopularManga(page,dt) self:getManga(api.."catalog/?limit=20&order_by=popular&page="..page,dt) end
 function Desu:getLatestManga(page,dt) self:getManga(api.."catalog/?limit=20&order_by=updated&page="..page,dt) end
 function Desu:getAZManga(page,dt) self:getManga(api.."catalog/?limit=20&order_by=name&page="..page,dt) end
+-- The catalogue JSON endpoint ignores search/genre/sort parameters.
+-- Use the site's catalogue for filters and its search endpoint for titles.
+local searchDetails = {}
+local lastSearch
+local function addEntry(self,dt,path,name,cover)
+ local raw=U.absolute(self.Link..'/',path)
+ dt[#dt+1]=CreateManga(U.text(name),U.path(raw),coverLink(cover),self.ID,raw)
+ coroutine.yield(false)
+end
 function Desu:searchManga(search,page,dt,tags)
- local query="&search="..search
- if tags then
-  query=query.."&order_by="..(self.Keys[tags["Сортировка"] or tags[1]] or "popular")
-  for i,key in ipairs({"kinds","genres"}) do
-   local values={}
-   for _,v in ipairs(tags[i==1 and "Тип манги" or "Жанры"] or tags[i+1] or {}) do
-    if self.Keys[v] then values[#values+1]=self.Keys[v] end
-   end
-   if #values>0 then query=query.."&"..key.."="..U.encode(table.concat(values,",")) end
+ local kinds=tags and (tags['Тип манги'] or tags[2]) or {}
+ local genres=tags and (tags['Жанры'] or tags[3]) or {}
+ local order=self.Keys[tags and (tags['Сортировка'] or tags[1])] or 'popular'
+ if search:gsub('[+%s]','')=='' then
+  local query='?page='..page..'&order_by='..order
+  for _,spec in ipairs({{'kinds',kinds},{'genres',genres}}) do
+   local slugs={}
+   for _,name in ipairs(spec[2]) do if self.Keys[name] then slugs[#slugs+1]=self.Keys[name] end end
+   if #slugs>0 then query=query..'&'..spec[1]..'='..U.encode(table.concat(slugs,',')) end
+  end
+  local html=U.request(self.Link..'/manga/'..query)
+  for block in html:gmatch('<li class="primaryContent memberListItem"[^>]*>(.-)</li>') do
+   local path=block:match('<a[^>]-href="([^"]+)"')
+   local title=block:match('<h3>.-<a([^>]+)>')
+   local name=title and U.attr(title,'title')
+   local cover=block:match("background%-image:%s*url%('([^']+)'%)")
+   if path and name and cover then addEntry(self,dt,path,name,cover) end
+  end
+  assert(#dt>0 or not html:find('memberListItem',1,true),'Desu: catalogue markup changed')
+  dt.NoPages=not html:gsub('&amp;','&'):find('[?&]page='..(page+1)..'[^%d]')
+  return
+ end
+ if page>1 then dt.NoPages=true;return end
+ if lastSearch~=search then searchDetails={};lastSearch=search end
+ local html=U.request(self.Link..'/manga/search/?q='..search..'&type=manga')
+ local entries={}
+ for block in html:gmatch('<li class="AniMangaSearchCard"[^>]*>(.-)</li>') do
+  local path=block:match('<a[^>]-href="([^"]+)"')
+  local img=block:match('<img[^>]+>')
+  if path and img then
+   local id=mangaID(path)
+   local m=searchDetails[id]
+   if not m then m=U.requestJSON(api..id..'/').manga;assert(m,'Desu: search details missing');searchDetails[id]=m end
+   local matches=#kinds==0
+   for _,name in ipairs(kinds) do if self.Keys[name]==m.kind then matches=true end end
+   local available={}
+   for _,genre in ipairs(m.genres or {}) do available[genre.slug]=true end
+   for _,name in ipairs(genres) do if not available[self.Keys[name] or name] then matches=false end end
+   if matches then entries[#entries+1]=m end
   end
  end
- self:getManga(api.."catalog/?limit=20&page="..page..query,dt)
+ table.sort(entries,function(a,b)
+  if order=='name' then return U.fold(a.name or '')<U.fold(b.name or '') end
+  local field=order=='updated' and 'updated_date' or 'views'
+  if (a[field] or 0)==(b[field] or 0) then return a.id<b.id end
+  return (a[field] or 0)>(b[field] or 0)
+ end)
+ for _,m in ipairs(entries) do
+  addEntry(self,dt,m.view_url,m.russian and m.russian~='' and m.russian or m.name,(m.cover or {}).preview or '')
+ end
+ dt.NoPages=true
 end
+
 function Desu:getChapters(manga,dt)
  local id=mangaID(manga.Link)
  local details=U.requestJSON(api..id.."/").manga or {}

@@ -1,4 +1,4 @@
-nhentai = Parser:new("nhentai", "https://nhentai.to", "DIF", "NHENTAI", 6)
+nhentai = Parser:new("nhentai", "https://nhentai.to", "DIF", "NHENTAI", 7)
 
 nhentai.NSFW = true
 local U=NoboruSupport or dofile("ux0:data/noboru/parsers/00_NoboruSupport.lua")
@@ -36,16 +36,23 @@ local function downloadContent(link)
 end
 
 function nhentai:getManga(link, dt)
-	local content = downloadContent(link)
-	dt.NoPages = true
-	for Link, ImageLink, Name in content:gmatch('class="gallery".-href="(%S-)".-data%-src="(%S-)".->([^<]-)</div>') do
-		if ImageLink:match("^http") == nil then
-			ImageLink = "https://cdn.nload.xyz" .. ImageLink
-		end
-		dt[#dt + 1] = CreateManga(stringify(Name), Link, U.image(ImageLink), self.ID, self.Link .. Link)
-		dt.NoPages = false
-		coroutine.yield(false)
-	end
+ local content = U.request(link)
+ dt.NoPages = true
+ for block in content:gmatch('<div[^>]-class="gallery"(.-)</a>') do
+  local path=block:match('<a[^>]-href="([^"]+)"')
+  local image=block:match('<img[^>]+>')
+  local name=block:match('class="caption"[^>]*>(.-)</div>')
+  if image then
+   name=name or U.attr(image,'alt')
+   local cover=U.attr(image,'data%-src') or U.attr(image,'src')
+   if path and name and cover and not cover:find('^data:') then
+    local raw=U.absolute(self.Link..'/',path)
+    dt[#dt+1]=CreateManga(U.text(name),U.path(raw),U.image(U.absolute(link,cover)),self.ID,raw)
+    dt.NoPages=false
+    coroutine.yield(false)
+   end
+  end
+ end
 end
 
 function nhentai:getPopularManga(page, dt)
@@ -73,14 +80,14 @@ function nhentai:getChapters(manga, dt)
 end
 
 function nhentai:prepareChapter(chapter, dt)
-	local content = downloadContent(self.Link .. chapter.Link)
+	local content = U.request(U.absolute(self.Link.."/", chapter.Link))
 	for link in content:gmatch('class="gallerythumb".-href="(%S-)"') do
-		dt[#dt + 1] = self.Link .. link
+		dt[#dt + 1] = U.absolute(self.Link.."/", link)
 	end
 end
 
 function nhentai:loadChapterPage(link, dt)
-	local image = downloadContent(link):match('image%-container".-src="(%S-)"')
+	local image = U.request(link):match('image%-container".-src="(%S-)"')
 	assert(image, "nhentai: page image not found")
 	dt.Link = U.image(U.absolute(link, image))
 end
