@@ -1,5 +1,6 @@
 if u8c then
-    NewMangaDex = Parser:new("MangaDex", "https://mangadex.org", "DIF", "MANGADEXDIF", 2)
+    local U=NoboruSupport or dofile("ux0:data/noboru/parsers/00_NoboruSupport.lua")
+    NewMangaDex = Parser:new("MangaDex", "https://mangadex.org", "DIF", "MANGADEXDIF", 3)
 
     NewMangaDex.Filters = {
         {
@@ -474,11 +475,22 @@ if u8c then
         else
             local managaContent = downloadContent(url)
             dt.NoPages = true
-            for Id, Name, ImageLink in managaContent:gmatch('{"id":"([^"]-)","type":"manga",[^{]-{"title":{[^}]-:"([^"]-)".-"type":"cover_art","attributes":{[^}]-"fileName":"([^"]-)"') do
-                dt[#dt + 1] = CreateManga(stringify(Name), Id, cdnUrl .. "/covers/" .. Id .. "/" .. ImageLink .. ".256.jpg", self.ID, self.Link .. "/title/" .. Id)
-                dt.NoPages = false
+            local response=U.json.decode(managaContent)
+            assert(response.result=="ok" and type(response.data)=="table", "MangaDex: API error")
+            for _,m in ipairs(response.data) do
+                local titles=m.attributes.title or {}
+                local name=titles.ru or titles.en or select(2,next(titles)) or m.id
+                local cover=""
+                for _,r in ipairs(m.relationships or {}) do
+                    if r.type=="cover_art" and r.attributes and r.attributes.fileName then
+                        cover=cdnUrl.."/covers/"..m.id.."/"..r.attributes.fileName..".256.jpg"
+                        break
+                    end
+                end
+                dt[#dt+1]=CreateManga(name,m.id,cover,self.ID,self.Link.."/title/"..m.id)
                 coroutine.yield(false)
             end
+            dt.NoPages=#response.data==0 or (response.offset or 0)+#response.data>=(response.total or math.huge)
         end
     end
 
@@ -1008,35 +1020,23 @@ if u8c then
         end
         while true do
             local content = downloadContent(apiChapterUrl .. "?manga=" .. manga.Link .. "&" .. contentRating .. "limit=100&offset=" .. (page * 100))
-            for id, volume, chapter, title, translatedLanguage in content:gmatch('{"id":"([^"]-)","type":"chapter",[^{]-{"volume":([^,]-),"chapter":"([^"]-)","title":"([^"]-)","translatedLanguage":"([^"]-)"') do
-                volume = volume:match('"([^"]-)"') or volume
-                if volume == "null" then
-                    volume = -1
-                else
-                    volume = volume:gsub(",", ".")
-                    volume = tonumber(volume) or volume
+            local response=U.json.decode(content)
+            assert(response.result=="ok" and type(response.data)=="table", "MangaDex: chapter API error")
+            for _,c in ipairs(response.data) do
+                local v=c.attributes or {}
+                -- External-only chapters have no images on MangaDex.
+                if (tonumber(v.pages) or 0)>0 and not v.isUnavailable then
+                    local lang=(v.translatedLanguage or ""):lower()
+                    local chapter=tostring(v.chapter or "0"):gsub(",", ".")
+                    t[#t+1]={Id=c.id,Volume=tonumber(v.volume) or -1,
+                        Chapter=tonumber(chapter) or chapter,CompareChapter=tonumber(chapter) or 0,
+                        Title=v.title or "",TranslatedLanguage=lang,
+                        LanguagePoints=(languagePoints[Settings.Language] or {})[lang] or 0}
                 end
-                chapter = chapter:gsub(",", ".")
-                local langPoints = 0
-                if translatedLanguage and languagePoints[Settings.Language] and languagePoints[Settings.Language][translatedLanguage:lower()] then
-                    langPoints = languagePoints[Settings.Language][translatedLanguage:lower()]
-                end
-                t[#t + 1] = {
-                    Id = id,
-                    Volume = tonumber(volume) or 0,
-                    Chapter = tonumber(chapter) or chapter,
-                    CompareChapter = tonumber(chapter) or tonumber(chapter:match("%d*")) or 0,
-                    Title = stringify(title),
-                    TranslatedLanguage = (translatedLanguage or ""):lower(),
-                    LanguagePoints = langPoints
-                }
             end
-            if a == #t then
-                break
-            else
-                a = #t
-            end
-            page = page + 1
+            if #response.data==0 or (page+1)*100 >= (response.total or 0) then break end
+            page=page+1
+            assert(page<1000,"MangaDex: excessive chapter pagination")
             coroutine.yield(true)
         end
         t = uniqueOnValues(t, "LanguagePoints", "TranslatedLanguage", "Volume", "CompareChapter")
@@ -1059,15 +1059,12 @@ if u8c then
     end
 
     function NewMangaDex:prepareChapter(chapter, dt)
-        local content = downloadContent(apiChapterPagesUrl .. "/" .. chapter.Link)
-        local baseUrl = content:match('"baseUrl":"([^"]-)"')
-        local hash = content:match('"hash":"([^"]-)"')
-        local data = content:match('"data":%[([^%]]-)]')
-        if not (baseUrl or data or hash) then
-            return
-        end
-        for image in data:gmatch('"([^"]-)"') do
-            dt[#dt + 1] = baseUrl:gsub("\\", "") .. "/data/" .. hash .. "/" .. image
+        local result=U.json.decode(downloadContent(apiChapterPagesUrl.."/"..chapter.Link))
+        local c=result.chapter or {}
+        assert(type(result.baseUrl)=="string" and type(c.data)=="table" and #c.data>0,
+            "MangaDex: this chapter has no hosted pages; refresh the chapter list")
+        for _,image in ipairs(c.data) do
+            dt[#dt+1]=result.baseUrl.."/data/"..c.hash.."/"..image
         end
     end
 

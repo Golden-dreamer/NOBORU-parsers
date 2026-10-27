@@ -1,4 +1,4 @@
-NudeMoon = Parser:new("Nude-Moon", "https://nude-moon.net", "RUS", "NUDEMOONRU", 5)
+NudeMoon = Parser:new("Nude-Moon", "https://g.nude-moon.fun", "RUS", "NUDEMOONRU", 6)
 
 NudeMoon.Filters = {
 	{
@@ -226,7 +226,7 @@ end
 function NudeMoon:getManga(link, dt, filter)
 	local content = downloadContent(link)
 	dt.NoPages = true
-	local regex = '<td colspan.-<a[^>]-href="(.-)".-title="(.-)".-src="(.-)"'
+	local regex = '<td colspan.-<a[^>]-href="(.-)".-title%s*=%s*"(.-)".-src="(.-)"'
 	if filter then
 		regex = regex .. ".-tag%-links(.-)</span>"
 	end

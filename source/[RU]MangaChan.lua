@@ -97,7 +97,7 @@ function MangaChan:loadChapterPage(link, dt)
 	dt.Link = link
 end
 
-YaoiChan = MangaChan:new("Яой-Тян!", "https://v8.yaoi-chan.me", "RUS", "YAOICHANRU", 3)
+YaoiChan = MangaChan:new("Яой-Тян!", "https://v18.yaoi-chan.me", "RUS", "YAOICHANRU", 4)
 YaoiChan.NSFW = true
 
 function YaoiChan:getPopularManga(page, dt)

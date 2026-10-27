@@ -1,1 +1,87 @@
-MangaOneLove=Parser:new("MangaOneLove","https://mangaonelove.ru","RUS","MANGAONELOVERU",3)local function a(b)local c={}Threads.insertTask(c,{Type="StringRequest",Link=b,Table=c,Index="text"})while Threads.check(c)do coroutine.yield(false)end;return c.text or""end;local function d(e)return e:gsub("&#([^;]-);",function(f)local g=tonumber("0"..f)or tonumber(f)return g and u8c(g)or"&#"..f..";"end):gsub("&(.-);",function(f)return HTML_entities and HTML_entities[f]and u8c(HTML_entities[f])or"&"..f..";"end)end;function MangaOneLove:getManga(b,h)local i=a(b)h.NoPages=true;for j,k,l in i:gmatch('manga%-item%-.-href="[^"]-/manga/(.-)/" title="(.-)".-data%-src="(.-)"')do h[#h+1]=CreateManga(d(k),j,l,self.ID,self.Link.."/manga/"..j)h.NoPages=false;coroutine.yield(false)end end;function MangaOneLove:getPopularManga(m,h)self:getManga(self.Link.."/manga/page/"..m.."/?m_orderby=rating",h)end;function MangaOneLove:getAZManga(m,h)self:getManga(self.Link.."/manga/page/"..m.."/?m_orderby=alphabet",h)end;function MangaOneLove:getLatestManga(m,h)self:getManga(self.Link.."/manga/page/"..m.."/?m_orderby=latest",h)end;function MangaOneLove:searchManga(n,m,h)local i=a(self.Link.."/page/"..m.."/?s="..n.."&post_type=wp-manga")h.NoPages=true;for j,k,l in i:gmatch('item__content".-href="[^"]-/manga/(.-)/" title="(.-)".-data%-src="(.-)"')do h[#h+1]=CreateManga(d(k),j,l,self.ID,self.Link.."/manga/"..j)h.NoPages=false;coroutine.yield(false)end end;function MangaOneLove:getChapters(o,h)local i=a(self.Link.."/manga/"..o.Link)local p=(i:match('class="summary__content.-p>(.-)</p>')or""):gsub("<.->",""):gsub("\n+","\n"):gsub("^%s+",""):gsub("%s+$","")local q=i:match('"manga_id":"(%d*)"')local r=a({Link="https://mangaonelove.ru/wp-admin/admin-ajax.php",HttpMethod=POST_METHOD,PostData="action=manga_get_chapters&manga="..q})h.Description=d(p)local s={}local t=false;for u,v in r:gmatch('>([^<]-)</a>%s*<ul class="sub%-chap list%-chap"(.-)</ul>')do t=true;for j,k in v:gmatch('wp%-manga%-chapter%s*">[^<]-<a href="[^"]+/([^"]-)/">%s*([^<]-)%s*</a>')do s[#s+1]={Name=d(u.." - "..k),Link=j,Pages={},Manga=o}end end;if not t then for j,k in r:gmatch('wp%-manga%-chapter%s*">[^<]-<a href="[^"]+/([^"]-)/">%s*([^<]-)%s*</a>')do s[#s+1]={Name=d(k),Link=j,Pages={},Manga=o}end end;for w=1,#s do h[#h+1]=s[w]end end;function MangaOneLove:prepareChapter(x,h)local i=a(self.Link.."/manga/"..x.Manga.Link.."/"..x.Link)i=i:match("chapter_preloaded_images = %[(.-)%]")for j in i:gmatch('"(.-)"')do h[#h+1]=j:gsub("\\/","/")end end;function MangaOneLove:loadChapterPage(b,h)h.Link=b end
+MangaOneLove=Parser:new("MangaOneLove","https://mangaonelove.website","RUS","MANGAONELOVERU",4)
+local U=NoboruSupport or dofile("ux0:data/noboru/parsers/00_NoboruSupport.lua")
+local nonce
+local function catalogue(self,page,dt,order,search)
+ if not nonce then
+  local html=U.request(self.Link.."/poisk/")
+  local config=html:match('var manga_search = ([^\n]+)') or ''
+  nonce=config:match('"nonce":"([^"]+)"')
+  assert(nonce,"MangaOneLove: search nonce not found")
+ end
+ local form="q="..(search or '').."&post_type=wp-manga&orderby="..order
+ local result=U.requestJSON({Link=self.Link.."/wp-admin/admin-ajax.php",HttpMethod=POST_METHOD,
+  PostData="action=manga_advanced_search_load&nonce="..nonce.."&paged="..page.."&form_data="..U.encode(form)})
+ assert(result.success and result.data and result.data.html,"MangaOneLove: search API rejected request")
+ local html=result.data.html
+ local seen={}
+ for block in html:gmatch('class="manga%-search%-item (.-)</a>') do
+  local link=block:match('<a[^>]-href="([^"]+)"')
+  local name=block:match('class="manga%-search%-title">(.-)</div>')
+  local image=block:match('<img[^>]-src="([^"]+)"')
+  if link and name and not seen[link] then
+   seen[link]=true
+   local slug=link:match('/manga/([^/]+)/?')
+   dt[#dt+1]=CreateManga(U.text(name),slug,U.absolute(self.Link.."/",image):gsub('^http:','https:'),self.ID,link)
+   coroutine.yield(false)
+  end
+ end
+ dt.NoPages=#dt==0 or not html:find('pagination',1,true)
+end
+function MangaOneLove:getPopularManga(page,dt) catalogue(self,page,dt,"rating") end
+function MangaOneLove:getLatestManga(page,dt) catalogue(self,page,dt,"modified") end
+function MangaOneLove:getAZManga(page,dt) catalogue(self,page,dt,"title") end
+function MangaOneLove:searchManga(search,page,dt) catalogue(self,page,dt,"relevance",search) end
+function MangaOneLove:getChapters(manga,dt)
+ local url=self.Link.."/manga/"..manga.Link.."/"
+ local html=U.request(url)
+ dt.Description=U.text(html:match('class="summary__content[^>]*>(.-)</div>') or '')
+ local chapters={};local seen={}
+ for tag,body in html:gmatch('(<a[^>]+>)(.-)</a>') do
+  if (U.attr(tag,"class") or ''):find('chapter%-item') then
+   local link=U.attr(tag,"href")
+   local name=body:match('class="chapter%-number">(.-)</span>') or body
+   if link and not seen[link] then
+    seen[link]=true
+    chapters[#chapters+1]={Name=U.text(name),Link=U.path(link),Pages={},Manga=manga}
+   end
+  end
+ end
+ assert(#chapters>0,"MangaOneLove: chapter list not found")
+ for i=#chapters,1,-1 do dt[#dt+1]=chapters[i] end
+end
+function MangaOneLove:prepareChapter(chapter,dt)
+ local url=chapter.Link:find("/manga%-reader/") and U.absolute(self.Link.."/",chapter.Link) or self.Link.."/manga/"..chapter.Manga.Link.."/"..chapter.Link.."/"
+ local html=U.request(url)
+ local current=html:match('var mrpData = (%b{});')
+ if current then
+  local count=tonumber(current:match('totalPages:%s*(%d+)'))
+  assert(count and count>0,"MangaOneLove: page count missing")
+  local base=url:gsub('/stranica%-%d+/?$','/')
+  for i=1,count do dt[#dt+1]=base.."stranica-"..i.."/" end
+  return
+ end
+ local data=html:match('chapter_preloaded_images%s*=%s*(%b[])')
+ if data then
+  for _,link in ipairs(U.json.decode(data)) do dt[#dt+1]={Link=U.absolute(url,link),Header1="Referer: "..url} end
+ else
+  local seen={}
+  for tag in html:gmatch('<img[^>]+>') do
+   if (U.attr(tag,"class") or ''):find('wp%-manga%-chapter%-img') then
+    local link=U.attr(tag,"data%-src") or U.attr(tag,"src")
+    if link and not seen[link] then seen[link]=true;dt[#dt+1]={Link=U.absolute(url,link:gsub('^%s+',''):gsub('%s+$','')),Header1="Referer: "..url} end
+   end
+  end
+ end
+ assert(#dt>0,"MangaOneLove: chapter images not found")
+end
+function MangaOneLove:loadChapterPage(link,dt)
+ if type(link)=="table" then dt.Link=link;return end
+ local html=U.request(link)
+ for tag in html:gmatch('<img[^>]+>') do
+  if U.attr(tag,"id")=="manga-image" then
+   dt.Link={Link=U.absolute(link,U.attr(tag,"src")):gsub('^http:','https:'),Header1="Referer: "..link}
+   return
+  end
+ end
+ error("MangaOneLove: reader image not found")
+end

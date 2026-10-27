@@ -1,6 +1,7 @@
-nhentai = Parser:new("nhentai", "https://nhentai.to", "DIF", "NHENTAI", 4)
+nhentai = Parser:new("nhentai", "https://nhentai.to", "DIF", "NHENTAI", 5)
 
 nhentai.NSFW = true
+local U=NoboruSupport or dofile("ux0:data/noboru/parsers/00_NoboruSupport.lua")
 
 local function stringify(string)
 	return string:gsub(
@@ -41,14 +42,14 @@ function nhentai:getManga(link, dt)
 		if ImageLink:match("^http") == nil then
 			ImageLink = "https://cdn.nload.xyz" .. ImageLink
 		end
-		dt[#dt + 1] = CreateManga(stringify(Name), Link, ImageLink, self.ID, self.Link .. Link)
+		dt[#dt + 1] = CreateManga(stringify(Name), Link, U.image(ImageLink), self.ID, self.Link .. Link)
 		dt.NoPages = false
 		coroutine.yield(false)
 	end
 end
 
 function nhentai:getPopularManga(page, dt)
-	self:getManga(self.Link .. "/?page=" .. page, dt)
+	self:getManga(self.Link .. "/go?page=" .. page, dt)
 end
 
 function nhentai:searchManga(search, page, dt)
@@ -72,5 +73,7 @@ function nhentai:prepareChapter(chapter, dt)
 end
 
 function nhentai:loadChapterPage(link, dt)
-	dt.Link = downloadContent(link):match('image%-container".-src="(%S-)"')
+	local image = downloadContent(link):match('image%-container".-src="(%S-)"')
+	assert(image, "nhentai: page image not found")
+	dt.Link = U.image(U.absolute(link, image))
 end

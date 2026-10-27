@@ -1,7 +1,7 @@
 --[[
 Covers Are Unavailable due GZIP encoding
 ]]
-Desu = Parser:new("Desu", "https://desu.store", "RUS", "DESURU", 8)
+Desu = Parser:new("Desu", "https://desu.uno", "RUS", "DESURU", 9)
 
 Desu.Filters = {
 	{
@@ -81,7 +81,7 @@ Desu.Filters = {
 Desu.Keys = {
 	["По алфавиту"] = "name",
 	["По популярности"] = "popular",
-	["По обновлению"] = "update",
+	["По обновлению"] = "updated",
 	["Манга"] = "manga",
 	["Манхва"] = "manhwa",
 	["Маньхуа"] = "manhua",
@@ -134,127 +134,64 @@ Desu.Keys = {
 	["Яой"] = "Yaoi"
 }
 
-local desu_api = "https://desu.store/manga/api"
-
-local function downloadContent(link)
-	local file = {}
-	Threads.insertTask(
-		file,
-		{
-			Type = "StringRequest",
-			Link = link,
-			Table = file,
-			Index = "string"
-		}
-	)
-	while Threads.check(file) do
-		coroutine.yield(false)
-	end
-	return file.string or ""
+local U=NoboruSupport or dofile("ux0:data/noboru/parsers/00_NoboruSupport.lua")
+local api=Desu.Link.."/api/manga/"
+local function mangaID(link)
+ return tostring(link):match("[./](%d+)/?$") or tostring(link):match("^(%d+)$") or error("Desu: unknown saved manga URL")
 end
-
-local function stringify(string)
-	if u8c then
-		return string:gsub(
-			"&#([^;]-);",
-			function(a)
-				local number = tonumber("0" .. a) or tonumber(a)
-				return number and u8c(number) or "&#" .. a .. ";"
-			end
-		):gsub(
-			"&([^;]-);",
-			function(a)
-				return HTML_entities and HTML_entities[a] and u8c(HTML_entities[a]) or "&" .. a .. ";"
-			end
-		)
-	else
-		return string
-	end
+function Desu:getManga(link,dt)
+ local result=U.requestJSON(link)
+ assert(type(result.mangas)=="table","Desu: catalogue response changed")
+ for _,m in ipairs(result.mangas) do
+  local name=m.name or m.russian or ""
+  if m.russian and m.russian~="" and m.russian~=name then name=name.." ("..m.russian..")" end
+  local raw=m.view_url or self.Link.."/manga/"..m.id.."/"
+  dt[#dt+1]=CreateManga(name,U.path(raw),(m.cover or {}).preview or "",self.ID,raw)
+  coroutine.yield(false)
+ end
+ local nav=result.pagination or {}
+ dt.NoPages=#result.mangas==0 or (nav.last_page and nav.current_page and nav.current_page>=nav.last_page) or false
 end
-
-function Desu:getManga(link, dt, is_search)
-	local content = downloadContent(link)
-	dt.NoPages = true
-	for Name, RName, ImageLink, Link in content:gmatch('"id":%d-,"name":"(.-)","russian":"(.-)","image":.-:"([^"]-/preview/[^"]-)".-"url":".-(manga/%S-)"') do
-		dt[#dt + 1] = CreateManga(stringify((Name .. " (" .. RName .. ")"):gsub("\\", "")), "/" .. Link, '', self.ID, self.Link .. "/" .. Link)
-		dt.NoPages = false
-		coroutine.yield(false)
-	end
+function Desu:getPopularManga(page,dt) self:getManga(api.."catalog/?limit=20&order_by=popular&page="..page,dt) end
+function Desu:getLatestManga(page,dt) self:getManga(api.."catalog/?limit=20&order_by=updated&page="..page,dt) end
+function Desu:getAZManga(page,dt) self:getManga(api.."catalog/?limit=20&order_by=name&page="..page,dt) end
+function Desu:searchManga(search,page,dt,tags)
+ local query="&search="..search
+ if tags then
+  query=query.."&order_by="..(self.Keys[tags["Сортировка"] or tags[1]] or "popular")
+  for i,key in ipairs({"kinds","genres"}) do
+   local values={}
+   for _,v in ipairs(tags[i==1 and "Тип манги" or "Жанры"] or tags[i+1] or {}) do
+    if self.Keys[v] then values[#values+1]=self.Keys[v] end
+   end
+   if #values>0 then query=query.."&"..key.."="..U.encode(table.concat(values,",")) end
+  end
+ end
+ self:getManga(api.."catalog/?limit=20&page="..page..query,dt)
 end
-
-function Desu:getPopularManga(page, dt)
-	Desu:getManga(desu_api .. "?limit=50&order=popular&page=" .. page, dt)
+function Desu:getChapters(manga,dt)
+ local id=mangaID(manga.Link)
+ local details=U.requestJSON(api..id.."/").manga or {}
+ dt.Description=U.text(details.description)
+ local chapters=U.requestJSON(api..id.."/chapters").chapters or {}
+ local ordered={}
+ for _,c in ipairs(chapters) do
+  if c.is_readable~=false then
+   ordered[#ordered+1]={Name="Том "..tostring(c.volume or "").." Глава "..tostring(c.number or "").." "..(c.title or ""),Link=tostring(c.id),Pages={},Manga=manga,Data={MangaID=id}}
+  end
+ end
+ table.sort(ordered,function(a,b)
+  local an=tonumber(a.Name:match("Глава ([%d.]+)")) or 0
+  local bn=tonumber(b.Name:match("Глава ([%d.]+)")) or 0
+  if an==bn then return tonumber(a.Link)<tonumber(b.Link) end
+  return an<bn
+ end)
+ for _,c in ipairs(ordered) do dt[#dt+1]=c end
 end
-
-function Desu:getAZManga(page, dt)
-	Desu:getManga(desu_api .. "?limit=50&order=name&page=" .. page, dt)
+function Desu:prepareChapter(chapter,dt)
+ local id=mangaID(chapter.Manga.Link)
+ local cid=tostring(chapter.Link):match("(%d+)/?$") or error("Desu: refresh saved chapter list")
+ local c=U.requestJSON(api..id.."/chapters/"..cid).chapter or {}
+ for _,p in ipairs(c.pages or {}) do dt[#dt+1]=U.absolute(self.Link.."/",p.url) end
 end
-
-function Desu:getLatestManga(page, dt)
-	Desu:getManga(desu_api .. "?limit=50&order=updated&page=" .. page, dt)
-end
-
-function Desu:searchManga(search, page, dt, tags)
-	local query = ""
-	if search:gsub(" ", "") ~= "" then
-		query = query .. "&search=" .. search
-	end
-	if tags then
-		query = query .. "&order=" .. self.Keys[tags[1]]
-		local types = {}
-		for _, v in ipairs(tags[2]) do
-			types[#types + 1] = self.Keys[v]
-		end
-		if #types > 0 then
-			query = query .. "&kinds=" .. table.concat(types, ",")
-		end
-		local genres = {}
-		for _, v in ipairs(tags[3]) do
-			genres[#genres + 1] = self.Keys[v]
-		end
-		if #genres > 0 then
-			query = query .. "&genres=" .. table.concat(genres, ",")
-		end
-	end
-	Desu:getManga(desu_api .. "?limit=20&page=" .. page .. query, dt, true)
-end
-
-function Desu:getChapters(manga, dt)
-	local content = downloadContent(self.Link .. manga.Link)
-	local description = (content:match('itemprop="description">(.-)</div>') or ""):gsub("<.->", ""):gsub("\n+", "\n"):gsub("^%s+", ""):gsub("%s+$", "")
-	dt.Description = stringify(description)
-	local t = {}
-	local rus_name = content:match('<span class="rus%-name"[^>]->(.-)</span>') or ""
-	local org_name = content:match('<span class="name"[^>]->(.-)</span>') or manga.Name
-	manga.Name = stringify(org_name .. (rus_name == "" and "" or " (" .. rus_name .. ")"))
-	for Link, Name in content:gmatch('<a href="(/?manga/%S-)" class="tips Tooltip"[^>]-title="([^>]-)">') do
-		if Link:sub(1, 1) ~= "/" then
-			Link = "/" .. Link
-		end
-		t[#t + 1] = {
-			Name = stringify(Name),
-			Link = Link,
-			Pages = {},
-			Manga = manga
-		}
-	end
-	for i = #t, 1, -1 do
-		dt[#dt + 1] = t[i]
-	end
-end
-
-function Desu:prepareChapter(chapter, dt)
-	local content = downloadContent(self.Link .. chapter.Link)
-	local dir = ((content:match('dir: "([^"]-)",') or ""):gsub("^[\\/]*", "") or ""):gsub("\\/", "/") or ""
-	local images = content:match("images: %[%[(.-)%]%],") or ""
-	for link in images:gmatch('"(.-)"') do
-		dt[#dt + 1] = dir .. link
-	end
-end
-
-function Desu:loadChapterPage(link, dt)
-	dt.Link = {
-		Link = link,
-		Header1 = "Referer:" .. self.Link
-	}
-end
+function Desu:loadChapterPage(link,dt) dt.Link={Link=link,Header1="Referer: "..self.Link.."/"} end
