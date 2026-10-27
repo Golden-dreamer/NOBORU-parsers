@@ -1,7 +1,4 @@
---[[
-Covers Are Unavailable due GZIP encoding
-]]
-Desu = Parser:new("Desu", "https://desu.uno", "RUS", "DESURU", 9)
+Desu = Parser:new("Desu", "https://desu.uno", "RUS", "DESURU", 10)
 
 Desu.Filters = {
 	{
@@ -136,6 +133,26 @@ Desu.Keys = {
 
 local U=NoboruSupport or dofile("ux0:data/noboru/parsers/00_NoboruSupport.lua")
 local api=Desu.Link.."/api/manga/"
+local function coverLink(url)
+ if not url or url=='' then return '' end
+ return {Link=url..(url:find('?',1,true) and '&' or '?')..'noboru_identity=1',Header1='Accept-Encoding: identity',Header2='Referer: https://desu.uno/'}
+end
+function Desu:prepareFilters()
+ local html=U.request(self.Link..'/manga/')
+ local genres,keys={},{}
+ for tag in html:gmatch('<input[^>]+>') do
+  local slug=U.attr(tag,'data%-genre%-slug')
+  local name=U.attr(tag,'data%-genre%-name')
+  if slug and name then name=U.text(name);genres[#genres+1]=name;keys[name]=slug end
+ end
+ assert(#genres>0,'Desu: genre list not found')
+ table.sort(genres)
+ local filters=table.clone(self.Filters)
+ filters[3].Tags=genres
+ self.Filters=filters
+ for name,slug in pairs(keys) do self.Keys[name]=slug end
+end
+
 local function mangaID(link)
  return tostring(link):match("[./](%d+)/?$") or tostring(link):match("^(%d+)$") or error("Desu: unknown saved manga URL")
 end
@@ -146,7 +163,7 @@ function Desu:getManga(link,dt)
   local name=m.name or m.russian or ""
   if m.russian and m.russian~="" and m.russian~=name then name=name.." ("..m.russian..")" end
   local raw=m.view_url or self.Link.."/manga/"..m.id.."/"
-  dt[#dt+1]=CreateManga(name,U.path(raw),(m.cover or {}).preview or "",self.ID,raw)
+  dt[#dt+1]=CreateManga(name,U.path(raw),coverLink((m.cover or {}).preview),self.ID,raw)
   coroutine.yield(false)
  end
  local nav=result.pagination or {}
@@ -194,4 +211,4 @@ function Desu:prepareChapter(chapter,dt)
  local c=U.requestJSON(api..id.."/chapters/"..cid).chapter or {}
  for _,p in ipairs(c.pages or {}) do dt[#dt+1]=U.absolute(self.Link.."/",p.url) end
 end
-function Desu:loadChapterPage(link,dt) dt.Link={Link=link,Header1="Referer: "..self.Link.."/"} end
+function Desu:loadChapterPage(link,dt) dt.Link=coverLink(link) end
