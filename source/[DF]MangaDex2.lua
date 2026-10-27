@@ -1,6 +1,6 @@
 if u8c then
     local U=NoboruSupport or dofile("ux0:data/noboru/parsers/00_NoboruSupport.lua")
-    NewMangaDex = Parser:new("MangaDex", "https://mangadex.org", "DIF", "MANGADEXDIF", 3)
+    NewMangaDex = Parser:new("MangaDex", "https://mangadex.org", "DIF", "MANGADEXDIF", 4)
 
     NewMangaDex.Filters = {
         {
@@ -365,20 +365,27 @@ if u8c then
     end
 
     local function downloadContent(link)
-        local file = {}
-        Threads.insertTask(
-            file,
-            {
-                Type = "StringRequest",
-                Link = link,
-                Table = file,
-                Index = "string"
-            }
-        )
-        while Threads.check(file) do
-            coroutine.yield(false)
+        return U.request({Link=link,Header1="Accept-Encoding: identity",Header2="Accept: application/json"})
+    end
+
+    function NewMangaDex:prepareFilters()
+        local response=U.requestJSON(apiUrl.."/manga/tag")
+        assert(response.result=="ok" and type(response.data)=="table","MangaDex: tag API error")
+        local groups={Format={},Genre={},Theme={}}
+        local keys={}
+        for _,tag in ipairs(response.data) do
+            local a=tag.attributes or {}
+            local name=(a.name or {}).en
+            local group=({format="Format",genre="Genre",theme="Theme",content="Theme"})[a.group]
+            if name and group then groups[group][#groups[group]+1]=name;keys[name]=tag.id end
         end
-        return file.string or ""
+        assert(next(keys),"MangaDex: empty tag list")
+        local filters=table.clone(self.Filters)
+        for _,f in ipairs(filters) do
+            if groups[f.Name] then table.sort(groups[f.Name]);f.Tags=groups[f.Name] end
+        end
+        self.Filters=filters
+        self.TagKeys=keys
     end
 
     local orderTypes = {
@@ -475,7 +482,7 @@ if u8c then
         else
             local managaContent = downloadContent(url)
             dt.NoPages = true
-            local response=U.json.decode(managaContent)
+            local response=U.decodeJSON(managaContent)
             assert(response.result=="ok" and type(response.data)=="table", "MangaDex: API error")
             for _,m in ipairs(response.data) do
                 local titles=m.attributes.title or {}
@@ -1020,7 +1027,7 @@ if u8c then
         end
         while true do
             local content = downloadContent(apiChapterUrl .. "?manga=" .. manga.Link .. "&" .. contentRating .. "limit=100&offset=" .. (page * 100))
-            local response=U.json.decode(content)
+            local response=U.decodeJSON(content)
             assert(response.result=="ok" and type(response.data)=="table", "MangaDex: chapter API error")
             for _,c in ipairs(response.data) do
                 local v=c.attributes or {}
@@ -1059,7 +1066,7 @@ if u8c then
     end
 
     function NewMangaDex:prepareChapter(chapter, dt)
-        local result=U.json.decode(downloadContent(apiChapterPagesUrl.."/"..chapter.Link))
+        local result=U.decodeJSON(downloadContent(apiChapterPagesUrl.."/"..chapter.Link))
         local c=result.chapter or {}
         assert(type(result.baseUrl)=="string" and type(c.data)=="table" and #c.data>0,
             "MangaDex: this chapter has no hosted pages; refresh the chapter list")
