@@ -1,4 +1,6 @@
-MangaHubRU = Parser:new("MangaHub (Русский)", "https://mangahub.ru", "RUS", "MANGAHUBRU", 2)
+MangaHubRU = Parser:new("MangaHub (Русский)", "https://mangahub.ru", "RUS", "MANGAHUBRU", 3)
+
+local U=NoboruSupport or dofile("ux0:data/noboru/parsers/00_NoboruSupport.lua")
 
 local function stringify(string)
 	if u8c then
@@ -28,7 +30,9 @@ local function downloadContent(link)
 			Link = link,
 			Table = file,
 			Index = "string",
-			Header1 = "Referer: " .. MangaHubRU.Link
+			Header1 = "Referer: " .. MangaHubRU.Link,
+			Header2 = "Accept-Encoding: identity",
+			Cookie = Settings.NSFW and "confirm_age=1" or ""
 		}
 	)
 	while Threads.check(file) do
@@ -40,10 +44,18 @@ end
 function MangaHubRU:getManga(link, dt)
 	local content = downloadContent(link)
 	dt.NoPages = true
-	for Link, ImageLink, Name in content:gmatch('<a href="/([^"]-)" class="d%-block rounded fast%-view%-layer"[^>]*>.-data%-background%-image="([^"]-)"></div>.-<a class="fw%-medium[^>]->%s*(.-)%s*</a>') do
-		dt[#dt + 1] = CreateManga(stringify(Name), Link, self.Link .. ImageLink:gsub("%%", "%%%%"), self.ID, self.Link .. "/" .. Link)
-		dt.NoPages = false
-		coroutine.yield(false)
+	local seen={}
+	for block in content:gmatch('<div class="item%-grid"[^>]*>(.-)</a>') do
+		local link=block:match('href="/(title/[^"]+)"')
+		local imageTag=block:match('<img[^>]+>')
+		local image=imageTag and U.attr(imageTag,'src')
+		local name=imageTag and U.attr(imageTag,'alt')
+		if link and image and name and not seen[link] then
+			seen[link]=true
+			dt[#dt+1]=CreateManga(U.text(name),link,U.absolute(self.Link..'/',image),self.ID,self.Link..'/'..link)
+			dt.NoPages=false
+			coroutine.yield(false)
+		end
 	end
 end
 
@@ -56,15 +68,15 @@ function MangaHubRU:getLatestManga(page, dt)
 end
 
 function MangaHubRU:searchManga(search, page, dt)
-	self:getManga(self.Link .. "/search/manga?filter%5Bsort%5D=score&query=" .. search .. "&filter%5Bquery%5D=" .. search .. "&filter%5Btypes%5D%5Bexcludes%5D=&filter%5Bgenres%5D%5Bexcludes%5D=&filter%5Bstatus%5D%5Bexcludes%5D=&filter%5Bcountry%5D%5Bexcludes%5D=&page=" .. page, dt)
+	self:getManga(self.Link .. "/search/title?query=" .. search .. "&page=" .. page, dt)
 end
 
 function MangaHubRU:getChapters(manga, dt)
-	local content = downloadContent(self.Link .. "/" .. manga.Link:gsub("title/", "chapters/")) or ""
+	local content = downloadContent(self.Link .. "/" .. manga.Link:gsub("^/", "") .. "/chapters") or ""
 	local t = {}
-	for Link, Name in content:gmatch('href="/read/([^"]-)">%s*<span class="text%-truncate">%s*([^<]*)%s*</span>') do
+	for Link, Name in content:gmatch('href="/read/([^"]-)"[^>]*>%s*<span class="text%-truncate">%s*(.-)%s*</span>') do
 		t[#t + 1] = {
-			Name = stringify(Name:gsub("[\t\n ]+", " ")),
+			Name = U.text(Name):gsub("[\t\n ]+", " "),
 			Link = Link,
 			Pages = {},
 			Manga = manga
@@ -77,12 +89,14 @@ end
 
 function MangaHubRU:prepareChapter(chapter, dt)
 	local content = downloadContent(self.Link .. "/read/" .. chapter.Link)
-	for Link in content:gmatch("src&quot;:&quot;[\\/]*([^&]-)&quot;") do
-		dt[#dt + 1] = {
-			Link = "https://" .. Link:gsub("\\/", "/"):gsub("%%", "%%%%"),
-			Header1 = "Referer:" .. self.Link
-		}
+	assert(not content:find("confirm_age__token",1,true), "MangaHub: reader requires age confirmation in a browser session")
+	for tag in content:gmatch('<img[^>]+>') do
+		if U.attr(tag,'data%-target')=='reader-scan.image' then
+			local link=U.attr(tag,'data%-src') or U.attr(tag,'src')
+			if link then dt[#dt+1]={Link=U.absolute(self.Link..'/',link),Header1='Referer: '..self.Link..'/',Header2='Accept-Encoding: identity'} end
+		end
 	end
+	assert(#dt>0,'MangaHub: reader images not found')
 end
 
 function MangaHubRU:loadChapterPage(link, dt)
