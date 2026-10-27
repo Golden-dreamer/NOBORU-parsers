@@ -142,3 +142,41 @@ This repo is created to store parsers for NOBORU app on PS vita
   function Parser:loadChapterPage(link, dest_table)
  
   ```
+
+## Fork runtime extensions
+
+The existing parser methods above still apply. Keep readable code in `source/` and synchronize the corresponding Lua text in `parsers/`; the app downloads the latter. Preserve parser IDs and increment the parser version when changing its behavior.
+
+### Dynamic filters and large option lists
+
+An optional `Parser:prepareFilters()` runs in a parser coroutine before catalogue loading. The app caches successful preparation for 30 minutes per session. Fetch dictionaries here, not while the parser file is being loaded. Build a new `Filters` table and assign it only after successful parsing; do not mutate the old filter/tag arrays in place.
+
+A filter has `Name`, `Type` (`check`, `checkcross`, or `radio`), `Tags` (display names), and optional `Default`. `searchManga(search, page, dest_table, filter)` receives selections both by filter name and by position: arrays for checkboxes, `{include={}, exclude={}}` for checkcross, and a name for radio buttons.
+
+For a large or remotely searched dictionary:
+
+```lua
+{
+    Name = "Authors",
+    Type = "check",
+    Tags = {},
+    Values = {},
+    Search = function(query)
+        return { { Name = "Display name", Value = "site-id-or-slug" } }
+    end
+}
+```
+
+`Search` is a plain function, not a method; it may yield and use the shared request helpers. Return up to 101 matches: the panel shows at most 100 new options, with the extra match indicating that the query should be refined. Already selected options and their `Values[name]` are retained. Read those values when building the site's actual query; do not assume that different sites share a tag-search syntax. Radio filters can use `EmptyOption` for a neutral choice. `Prefix=true` labels a search that only matches the beginning of a name.
+
+All expanded filters have an in-list search row. Local filtering retains original option indexes. For large dictionaries, `NoboruSupport.termOptions(content, query)` scans a JSON `terms` array of `{name, slug, ...}` records without materializing the whole dictionary as Lua tables.
+
+### Random and shared helpers
+
+Optional `Parser:getRandomManga(page, dest_table)` enables the Random mode. Return ordinary manga entries and set `dest_table.NoPages=true` when there is no next page. Re-selecting Random requests a new result.
+
+`00_NoboruSupport.lua` provides `request`, `requestJSON`, `decodeJSON`, text/URL helpers and the option-search helpers. Requests accept a URL or a task link table with headers, cookies and POST data. Returned page/image links can also be tables such as `{Link=url, Header1="Referer: ..."}`. Attribute names passed to `U.attr` are Lua patterns: escape hyphens, e.g. `data%-src`.
+
+Use Lua 5.3 for syntax checks. Respect the shared helpers' URL/POST length limits. JSON may arrive with a trailing NUL; the shared decoder handles this and uses byte offsets despite NOBORU's UTF-8 `string.sub` override.
+
+Image bytes must be supported by the existing runtime (e.g. JPEG/PNG). `U.image` is a URL for the separate server-side WebP-to-JPEG gateway, not an on-device decoder. Check magic bytes and content encoding: a `.jpg` response can still contain gzip or HTML.
