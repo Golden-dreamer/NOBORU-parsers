@@ -1,4 +1,4 @@
-nhentai = Parser:new("nhentai", "https://nhentai.to", "DIF", "NHENTAI", 7)
+nhentai = Parser:new("nhentai", "https://nhentai.to", "DIF", "NHENTAI", 8)
 
 nhentai.NSFW = true
 local U=NoboruSupport or dofile("ux0:data/noboru/parsers/00_NoboruSupport.lua")
@@ -53,22 +53,67 @@ function nhentai:getManga(link, dt)
    end
   end
  end
+ local pagination=content:match('<section class="pagination">(.-)</section>') or ''
+ dt.NoPages=not (pagination:find('rel="next"',1,true) or pagination:find('class="next"',1,true))
 end
 
 function nhentai:getPopularManga(page, dt)
 	self:getManga(self.Link .. "/go?page=" .. page, dt)
 end
 
-function nhentai:searchManga(search, page, dt, tags)
-	local selected=tags and tags['Теги']
-	local slug=selected and self.Filters[1].Values[selected]
-	if slug and slug~='' then
-		assert(search:gsub('[+%s]','')=='','nhentai: clear text search to browse the selected tag')
-		self:getManga(self.Link..'/tag/'..slug..'/?page='..page,dt)
-	else
-		self:getManga(self.Link .. "/search/?q=" .. search .. "&page=" .. page, dt)
-	end
+local function filterValue(self,tags,name)
+ for _,filter in ipairs(self.Filters or {}) do
+  if filter.Name==name then
+   return (filter.Values or {})[(tags or {})[name] or filter.Default] or ''
+  end
+ end
+ return ''
 end
+
+local function pageCount(value)
+ if value=='' then return '' end
+ assert(value:match('^%d+$') and #value<=6,'nhentai: enter a page count from 0 to 999999')
+ return tostring(tonumber(value))
+end
+
+function nhentai:searchManga(search,page,dt,tags)
+ local tag=filterValue(self,tags,'Теги')
+ local group=filterValue(self,tags,'Группы')
+ local language=filterValue(self,tags,'Язык')
+ local sort=filterValue(self,tags,'Сортировка')
+ if sort=='' then sort='relevance' end
+ local minimum=pageCount(filterValue(self,tags,'Мин. страниц'))
+ local maximum=pageCount(filterValue(self,tags,'Макс. страниц'))
+ assert(minimum=='' or maximum=='' or tonumber(minimum)<=tonumber(maximum),'nhentai: minimum pages exceeds maximum pages')
+ local excluded={}
+ for _,filter in ipairs(self.Filters or {}) do
+  if filter.Name=='Исключить теги' then
+   for _,name in ipairs(tags and tags[filter.Name] or {}) do
+    local value=filter.Values[name]
+    if value and value~='' then excluded[#excluded+1]=value end
+   end
+  end
+ end
+ local blank=search:gsub('[+%s]','')==''
+ assert(tag=='' or group=='','nhentai: choose either a tag or a group')
+ if tag~='' or group~='' then
+  assert(blank,'nhentai: clear text search to browse a tag or group')
+  assert(language=='' and minimum=='' and maximum=='' and #excluded==0 and sort=='relevance',
+   'nhentai: site ignores advanced filters on tag/group pages; clear them or use text search')
+  local kind=tag~='' and 'tag' or 'group'
+  self:getManga(self.Link..'/'..kind..'/'..(tag~='' and tag or group)..'/?page='..page,dt)
+ elseif blank then
+  assert(minimum=='' and maximum=='' and #excluded==0 and sort=='relevance',
+   'nhentai: enter search text to use page, exclusion or sorting filters')
+  if language~='' then self:getManga(self.Link..'/language/'..language..'/?page='..page,dt)
+  else self:getPopularManga(page,dt) end
+ else
+  local link=self.Link..'/search?q='..search..'&sort='..U.encode(sort)..'&lang='..U.encode(language)
+  link=link..'&min_pages='..minimum..'&max_pages='..maximum..'&exclude='..U.encode(table.concat(excluded,','))..'&page='..page
+  self:getManga(link,dt)
+ end
+end
+
 
 function nhentai:getChapters(manga, dt)
 	dt[#dt + 1] = {
@@ -92,49 +137,123 @@ function nhentai:loadChapterPage(link, dt)
 	dt.Link = U.image(U.absolute(link, image))
 end
 
-local function directoryEntries(html)
- local entries={}
- for slug,name in html:gmatch('href="/tag/([^"/]+)/"[^>]*>.-class="name">(.-)</span>') do
-  entries[#entries+1]={Name=U.text(name),Value=slug}
- end
- return entries
-end
-function nhentai:prepareFilters()
- local first=U.request(self.Link..'/tags/')
- local index={}
- local last=1
- for page,letter in first:gmatch('href="%?page=(%d+)#([^"]+)"') do
-  index[letter:lower()]=tonumber(page);last=math.max(last,tonumber(page))
- end
- local function search(query)
-  query=U.fold(query):match('^%s*(.-)%s*$')
-  local function page(number)
-   if number==1 then return directoryEntries(first) end
-   return directoryEntries(U.request(nhentai.Link..'/tags/?page='..number))
+local function directorySearch(self,directory,kind)
+ local first,index,last
+ local cache,order={},{}
+ local function entries(html)
+  local result={}
+  for slug,name in html:gmatch('href="/'..kind..'/([^"/]+)/"[^>]*>.-class="name">(.-)</span>') do
+   name=U.text(name)
+   result[#result+1]={Name=name,Value=slug}
   end
-  if query=='' then return page(1) end
+  return result
+ end
+ local function load(number)
+  if cache[number] then return cache[number] end
+  local html=number==1 and first or U.request(self.Link..'/'..directory..'/?page='..number)
+  local result=entries(html)
+  cache[number]=result;order[#order+1]=number
+  if #order>6 then cache[table.remove(order,1)]=nil end
+  return result
+ end
+ return function(query)
+  if not first then
+   first=U.request(self.Link..'/'..directory..'/')
+   index={};last=1
+   for number,letter in first:gmatch('href="%?page=(%d+)#([^"]+)"') do index[U.fold(letter)]=tonumber(number) end
+   for number in first:gmatch('[?&]page=(%d+)') do last=math.max(last,tonumber(number)) end
+   assert(next(index),'nhentai: directory alphabet not found')
+  end
+  query=U.fold(query):match('^%s*(.-)%s*$')
+  if query=='' then
+   local result={}
+   for i,entry in ipairs(load(1)) do if i>101 then break end;result[#result+1]=entry end
+   return result
+  end
   local letter=query:sub(1,1)
   local low,high=index[letter] or 1,last
-  for other,start in pairs(index) do if other>letter and start>=low then high=math.min(high,start) end end
+  if letter:match('%d') then
+   low=index.num or 1;high=index.a or last
+  else
+   for other,start in pairs(index) do
+    if other~='num' and other>letter and start>=low then high=math.min(high,start) end
+   end
+  end
   while low<high do
    local mid=math.floor((low+high)/2)
-   local entries=page(mid)
-   if #entries>0 and U.fold(entries[#entries].Name)<query then low=mid+1 else high=mid end
+   local result=load(mid)
+   if #result>0 and U.fold(result[#result].Name)<query then low=mid+1 else high=mid end
   end
   local result={}
   for number=low,math.min(last,low+2) do
-   local entries=page(number)
-   for _,entry in ipairs(entries) do
+   local page=load(number)
+   for _,entry in ipairs(page) do
     if U.fold(entry.Name):find(query,1,true)==1 then result[#result+1]=entry end
     if #result>=101 then return result end
    end
-   local final=entries[#entries]
+   local final=page[#page]
    if final and U.fold(final.Name)>query and U.fold(final.Name):find(query,1,true)~=1 then break end
   end
   return result
  end
- self.Filters={{Name='Теги',Type='radio',Tags={'Любой тег'},Values={['Любой тег']=''},Default='Любой тег',EmptyOption='Любой тег',Search=search,Prefix=true}}
 end
+
+local function directoryFilter(name,neutral,search,kind)
+ return {Name=name,Type=kind or 'radio',Tags=neutral and {neutral} or {},Values=neutral and {[neutral]=''} or {},
+  Default=neutral,EmptyOption=neutral,Search=search}
+end
+
+local function numericFilter(name)
+ return directoryFilter(name,'Без ограничения',function(query)
+  local result,seen={},{}
+  if query~='' then
+   local value=pageCount(query)
+   result[#result+1]={Name=query,Value=value};seen[query]=true
+  end
+  for _,value in ipairs({'0','10','20','30','50','100','200','500','1000'}) do
+   if not seen[value] and value:find(query,1,true)==1 then result[#result+1]={Name=value,Value=value} end
+  end
+  return result
+ end)
+end
+
+local function selectFilter(html,field,name,labels)
+ local result={Name=name,Type='radio',Tags={},Values={}}
+ for tag,body in html:gmatch('(<select[^>]*>)(.-)</select>') do
+  if U.attr(tag,'name')==field then
+   for option,text in body:gmatch('(<option[^>]*>)(.-)</option>') do
+    local value=U.attr(option,'value') or ''
+    local label=labels[value] or U.text(text)
+    result.Tags[#result.Tags+1]=label;result.Values[label]=value
+    if value=='' then result.EmptyOption=label end
+    if option:find('%sselected[%s=>]') then result.Default=label end
+   end
+  end
+ end
+ assert(#result.Tags>0,'nhentai: missing search filter: '..field)
+ result.Default=result.Default or result.Tags[1]
+ return result
+end
+
+function nhentai:prepareFilters()
+ local html=U.request(self.Link..'/search?q=')
+ local tags=directorySearch(self,'tags','tag')
+ local function excluded(query)
+  local result={}
+  for _,entry in ipairs(tags(query)) do result[#result+1]={Name=entry.Name,Value=entry.Name} end
+  return result
+ end
+ local groups=directorySearch(self,'groups','group')
+ self.Filters={
+  directoryFilter('Теги','Любой тег',tags),
+  directoryFilter('Группы','Любая группа',groups),
+  selectFilter(html,'lang','Язык',{['']='Любой язык',japanese='Японский',english='Английский',chinese='Китайский',korean='Корейский'}),
+  selectFilter(html,'sort','Сортировка',{relevance='По соответствию',newest='Сначала новые',['most-favorited']='По избранному',['most-liked']='По лайкам'}),
+  numericFilter('Мин. страниц'),numericFilter('Макс. страниц'),
+  directoryFilter('Исключить теги',nil,excluded,'check')
+ }
+end
+
 function nhentai:getRandomManga(page,dt)
  if page>1 then dt.NoPages=true;return end
  local html=U.request(self.Link..'/random/')
