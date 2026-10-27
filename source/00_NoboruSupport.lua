@@ -427,8 +427,11 @@ function U.encode(s)
  return (tostring(s):gsub('[^%w%-_%.~]',function(c)return string.format('%%%02X',string.byte(c))end))
 end
 function U.request(link)
+ local url=type(link)=='table' and link.Link or link
+ assert(type(url)=='string' and #url<512,'Parser: request too long; select fewer filters')
+ if type(link)=='table' and link.PostData then assert(#link.PostData<2048,'Parser: too many filters for the request buffer') end
  local result={}
- Threads.insertTask(result,{Type='StringRequest',Link=link,Table=result,Index='text'})
+ Threads.insertTask(result,{Type='StringRequest',Link=link,Table=result,Index='text',Header1='Accept-Encoding: identity'})
  while Threads.check(result) do coroutine.yield(false) end
  local text=result.text or ''
  if text=='' then error('Parser: empty network response; check proxy/VPN') end
@@ -436,13 +439,77 @@ function U.request(link)
  if text:find('<title>Just a moment',1,true) or text:find('cf-chl-widget',1,true) then error('Parser: Cloudflare challenge; browser gateway required') end
  return text
 end
-function U.requestJSON(link)
- local content=U.request(link)
+function U.decodeJSON(content)
  local ok,value=pcall(json.decode,content)
- if not ok then error('Parser: invalid JSON: '..tostring(value)) end
+ if not ok then
+  if content:byte(1)==31 and content:byte(2)==139 then error('Parser: server returned gzip instead of decoded JSON') end
+  if content:match('^%s*<') then error('Parser: server returned HTML instead of JSON') end
+  local bytes={}
+  for i=1,math.min(8,#content) do bytes[#bytes+1]=string.format('%02X',content:byte(i)) end
+  error('Parser: invalid JSON ['..table.concat(bytes,' ')..']: '..tostring(value))
+ end
  if type(value)~='table' then error('Parser: expected JSON object or array') end
  return value
 end
+function U.requestJSON(link)
+ return U.decodeJSON(U.request(link))
+end
+local lowercase={}
+local upper,lower={},{}
+for c in string.gmatch('АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ','[%z\1-\127\194-\244][\128-\191]*') do upper[#upper+1]=c end
+for c in string.gmatch('абвгдеёжзийклмнопрстуфхцчшщъыьэюя','[%z\1-\127\194-\244][\128-\191]*') do lower[#lower+1]=c end
+for i,c in ipairs(upper) do lowercase[c]=lower[i] end
+function U.fold(s)
+ return (s:lower():gsub('[\194-\244][\128-\191]+',function(c) return lowercase[c] or c end))
+end
+function U.options(terms,query)
+ local result={}
+ query=U.fold(query or '')
+ for i,t in ipairs(terms) do
+  if U.fold(t.name):find(query,1,true) then
+   result[#result+1]={Name=t.name,Value=t.slug}
+   if #result>=101 then break end
+  end
+  if i%100==0 then coroutine.yield(false) end
+ end
+ return result
+end
+function U.termOptions(content,query)
+ local start=content:find('"terms"%s*:%s*%[')
+ assert(start,'Parser: term dictionary missing')
+ start=content:find('[',start,true)+1
+ local result={}
+ local depth,inString,escaped=0,false,false
+ local objectStart
+ query=U.fold(query or '')
+ for i=start,#content do
+  local byte=content:byte(i)
+  if inString then
+   if escaped then escaped=false
+   elseif byte==92 then escaped=true
+   elseif byte==34 then inString=false end
+  elseif byte==34 then inString=true
+  elseif byte==123 then
+   if depth==0 then objectStart=i end
+   depth=depth+1
+  elseif byte==125 then
+   depth=depth-1
+   if depth==0 and objectStart then
+    local text
+    if string.unpack then text=string.unpack('c'..(i-objectStart+1),content,objectStart)
+    else local chars={};for j=objectStart,i do chars[#chars+1]=string.char(content:byte(j)) end;text=table.concat(chars) end
+    local term=U.decodeJSON(text)
+    if type(term.name)=='string' and type(term.slug)=='string' and U.fold(term.name):find(query,1,true) then
+     result[#result+1]={Name=term.name,Value=term.slug}
+     if #result>=101 then return result end
+    end
+   end
+  elseif byte==93 and depth==0 then return result end
+  if i%8192==0 then coroutine.yield(false) end
+ end
+ error('Parser: truncated term dictionary')
+end
+
 -- Image conversion endpoint: same host as the configured forward proxy, port 8182.
 -- An explicit NoboruImageGateway URL can override this for a different server.
 function U.image(url)
