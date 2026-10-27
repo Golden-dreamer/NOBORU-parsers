@@ -426,15 +426,44 @@ end
 function U.encode(s)
  return (tostring(s):gsub('[^%w%-_%.~]',function(c)return string.format('%%%02X',string.byte(c))end))
 end
+local requestSerial=0
+local fileHosts={}
+local function requestFile(link)
+ requestSerial=requestSerial+1
+ local path='ux0:data/noboru/temp/response-'..requestSerial..'.body'
+ local result={}
+ Threads.insertTask(result,{Type='FileDownload',Link=link,Path=path,Table=result,RequireContent=true,Header1='Accept-Encoding: identity'})
+ while Threads.check(result) do coroutine.yield(false) end
+ local text=''
+ if System.doesFileExist(path) then
+  local handle
+  local ok,value=pcall(function()
+   handle=System.openFile(path,FREAD)
+   return System.readFile(handle,System.sizeFile(handle))
+  end)
+  if handle then System.closeFile(handle) end
+  System.deleteFile(path)
+  if ok then text=value or '' end
+ end
+ return text:gsub('%z+$','')
+end
 function U.request(link)
  local url=type(link)=='table' and link.Link or link
  assert(type(url)=='string' and #url<512,'Parser: request too long; select fewer filters')
  if type(link)=='table' and link.PostData then assert(#link.PostData<2048,'Parser: too many filters for the request buffer') end
- local result={}
- Threads.insertTask(result,{Type='StringRequest',Link=link,Table=result,Index='text',Header1='Accept-Encoding: identity'})
- while Threads.check(result) do coroutine.yield(false) end
- local text=result.text or ''
- if text=='' then error('Parser: empty network response; check proxy/VPN') end
+ local host=url:match('^%w+://([^/]+)') or 'site'
+ local text=''
+ if not fileHosts[host] then
+  local result={}
+  Threads.insertTask(result,{Type='StringRequest',Link=link,Table=result,Index='text',Header1='Accept-Encoding: identity'})
+  while Threads.check(result) do coroutine.yield(false) end
+  text=(result.text or ''):gsub('%z+$','')
+ end
+ if text=='' then
+  text=requestFile(link)
+  if text~='' then fileHosts[host]=true end
+ end
+ if text=='' then error('Parser: empty response from '..host..' (text and file requests failed)') end
  if text:find('router.parklogic.com',1,true) or text:find('assets.abovedomains.com',1,true) then error('Parser: domain is parked, not a catalogue') end
  if text:find('<title>Just a moment',1,true) or text:find('cf-chl-widget',1,true) then error('Parser: Cloudflare challenge; browser gateway required') end
  return text

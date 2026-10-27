@@ -1,4 +1,5 @@
-NudeMoon = Parser:new("Nude-Moon", "https://g.nude-moon.fun", "RUS", "NUDEMOONRU", 6)
+NudeMoon = Parser:new("Nude-Moon", "https://g.nude-moon.fun", "RUS", "NUDEMOONRU", 7)
+local U=NoboruSupport or dofile("ux0:data/noboru/parsers/00_NoboruSupport.lua")
 
 NudeMoon.Filters = {
 	{
@@ -196,22 +197,7 @@ local function stringify(string)
 end
 
 local function downloadContent(link)
-	local f = {}
-	Threads.insertTask(
-		f,
-		{
-			Type = "StringRequest",
-			Link = link,
-			Table = f,
-			Index = "text",
-			Header1 = "referer: https://www.google.com/",
-			Header2 = "cookie: fusion_user=323815.769acb94801026e2f219844529cf51d0"
-		}
-	)
-	while Threads.check(f) do
-		coroutine.yield(false)
-	end
-	return f.text or ""
+	return U.request({Link=link,Header1="Referer: https://www.google.com/",Header2="Accept-Encoding: identity"})
 end
 
 local function find(table, str)

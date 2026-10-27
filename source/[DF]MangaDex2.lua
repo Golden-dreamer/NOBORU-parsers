@@ -1,6 +1,6 @@
 if u8c then
     local U=NoboruSupport or dofile("ux0:data/noboru/parsers/00_NoboruSupport.lua")
-    NewMangaDex = Parser:new("MangaDex", "https://mangadex.org", "DIF", "MANGADEXDIF", 4)
+    NewMangaDex = Parser:new("MangaDex", "https://mangadex.org", "DIF", "MANGADEXDIF", 5)
 
     NewMangaDex.Filters = {
         {
@@ -365,6 +365,7 @@ if u8c then
     end
 
     local function downloadContent(link)
+        link=link:gsub("%[","%%5B"):gsub("%]","%%5D")
         return U.request({Link=link,Header1="Accept-Encoding: identity",Header2="Accept: application/json"})
     end
 
