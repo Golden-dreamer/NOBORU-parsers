@@ -432,20 +432,9 @@ local function requestFile(link)
  requestSerial=requestSerial+1
  local path='ux0:data/noboru/temp/response-'..requestSerial..'.body'
  local result={}
- Threads.insertTask(result,{Type='FileDownload',Link=link,Path=path,Table=result,RequireContent=true,Header1='Accept-Encoding: identity'})
+ Threads.insertTask(result,{Type='FileDownload',Link=link,Path=path,Table=result,Index='text',ReadText=true,RequireContent=true,Header1='Accept-Encoding: identity'})
  while Threads.check(result) do coroutine.yield(false) end
- local text=''
- if System.doesFileExist(path) then
-  local handle
-  local ok,value=pcall(function()
-   handle=System.openFile(path,FREAD)
-   return System.readFile(handle,System.sizeFile(handle))
-  end)
-  if handle then System.closeFile(handle) end
-  System.deleteFile(path)
-  if ok then text=value or '' end
- end
- return text:gsub('%z+$','')
+ return (result.text or ''):gsub('%z+$','')
 end
 function U.request(link)
  local url=type(link)=='table' and link.Link or link
