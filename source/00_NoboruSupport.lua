@@ -391,6 +391,7 @@ function json.decode(str)
   if type(str) ~= "string" then
     error("expected argument of type string, got " .. type(str))
   end
+  str = str:gsub("%z+$", "")
   local res, idx = parse(str, next_char(str, 1, space_chars, true))
   idx = next_char(str, idx, space_chars, true)
   if idx <= #str then
@@ -438,7 +439,8 @@ end
 function U.requestJSON(link)
  local content=U.request(link)
  local ok,value=pcall(json.decode,content)
- if not ok or type(value)~='table' then error('Parser: expected JSON; received HTML, challenge, or an invalid response') end
+ if not ok then error('Parser: invalid JSON: '..tostring(value)) end
+ if type(value)~='table' then error('Parser: expected JSON object or array') end
  return value
 end
 -- Image conversion endpoint: same host as the configured forward proxy, port 8182.
