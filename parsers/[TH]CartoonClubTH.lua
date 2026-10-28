@@ -1,1 +1,91 @@
-CartoonClubTH=Parser:new("CartoonClub-TH","https://www.toonclub-th.co","THA","CARTOONCLUBTH",1)CartoonClubTH.Disabled=true;local function a(b)return b:gsub("&#([^;]-);",function(c)local d=tonumber("0"..c)or tonumber(c)return d and u8c(d)or"&#"..c..";"end):gsub("&(.-);",function(c)return HTML_entities and HTML_entities[c]and u8c(HTML_entities[c])or"&"..c..";"end)end;local function e(f)local g={}Threads.insertTask(g,{Type="StringRequest",Link=f,Table=g,Index="string"})while Threads.check(g)do coroutine.yield(false)end;return g.string or""end;function CartoonClubTH:getManga(f,h)local i=e(f)local j=h;j.NoPages=true;for k,l,m in i:gmatch('aniframe">.-href="[^"]*/([^"]-)/".-src="([^"]-)".-manga%-title">([^<]-)</a>')do local n=CreateManga(a(m),k,l,self.ID,self.Link.."/"..k)if n then j.NoPages=false;j[#j+1]=n end;coroutine.yield(false)end end;function CartoonClubTH:getPopularManga(o,h)self:getManga(self.Link.."/page/"..o.."/?s=mostviews",h)end;function CartoonClubTH:getLatestManga(o,h)self:getManga(self.Link.."/page/"..o.."/?s=manga-ongoing",h)end;function CartoonClubTH:searchManga(p,o,h)self:getManga(self.Link.."/page/"..o.."/?s="..p,h)end;function CartoonClubTH:getChapters(n,h)local i=e(self.Link.."/"..n.Link)local j={}for k,m in(i:match('chapter%-name">(.-)</table>')or""):gmatch('href="[^"]*/([^"]-)/"[^>]->([^<]-)<')do j[#j+1]={Name=a(m),Link=k,Pages={},Manga=n}end;for q=#j,1,-1 do h[#h+1]=j[q]end end;function CartoonClubTH:prepareChapter(r,h)local i=e(self.Link.."/"..r.Manga.Link.."/"..r.Link)local j=h;for k in(i:match('id="page_select1"(.-)</div>')or""):gmatch('value="([^"]-)"')do j[#j+1]=k end end;function CartoonClubTH:loadChapterPage(f,h)local i=e(f)h.Link=i:match('name="img_page"[^>]-src="([^"]-)"'):gsub("^%s*",""):gsub("%s*$",""):gsub("\\/","/")end
+CartoonClubTH = Parser:new("CartoonClub-TH", "https://www.toonclub-th.co", "THA", "CARTOONCLUBTH", 1)
+
+---Reason: Host is unavailable
+CartoonClubTH.Disabled = true
+
+local function stringify(string)
+    return string:gsub(
+        "&#([^;]-);",
+        function(a)
+            local number = tonumber("0" .. a) or tonumber(a)
+            return number and u8c(number) or "&#" .. a .. ";"
+        end
+    ):gsub(
+        "&(.-);",
+        function(a)
+            return HTML_entities and HTML_entities[a] and u8c(HTML_entities[a]) or "&" .. a .. ";"
+        end
+    )
+end
+
+local function downloadContent(link)
+    local file = {}
+    Threads.insertTask(
+        file,
+        {
+            Type = "StringRequest",
+            Link = link,
+            Table = file,
+            Index = "string"
+        }
+    )
+    while Threads.check(file) do
+        coroutine.yield(false)
+    end
+    return file.string or ""
+end
+
+function CartoonClubTH:getManga(link, dt)
+    local content = downloadContent(link)
+    local t = dt
+    t.NoPages = true
+    for Link, ImageLink, Name in content:gmatch('aniframe">.-href="[^"]*/([^"]-)/".-src="([^"]-)".-manga%-title">([^<]-)</a>') do
+        local manga = CreateManga(stringify(Name), Link, ImageLink, self.ID, self.Link .. "/" .. Link)
+        if manga then
+            t.NoPages = false
+            t[#t + 1] = manga
+        end
+        coroutine.yield(false)
+    end
+end
+
+function CartoonClubTH:getPopularManga(page, dt)
+    self:getManga(self.Link .. "/page/" .. page .. "/?s=mostviews", dt)
+end
+
+function CartoonClubTH:getLatestManga(page, dt)
+    self:getManga(self.Link .. "/page/" .. page .. "/?s=manga-ongoing", dt)
+end
+
+function CartoonClubTH:searchManga(search, page, dt)
+    self:getManga(self.Link .. "/page/" .. page .. "/?s=" .. search, dt)
+end
+
+function CartoonClubTH:getChapters(manga, dt)
+    local content = downloadContent(self.Link .. "/" .. manga.Link)
+    local t = {}
+    for Link, Name in (content:match('chapter%-name">(.-)</table>') or ""):gmatch('href="[^"]*/([^"]-)/"[^>]->([^<]-)<') do
+        t[#t + 1] = {
+            Name = stringify(Name),
+            Link = Link,
+            Pages = {},
+            Manga = manga
+        }
+    end
+    for i = #t, 1, -1 do
+        dt[#dt + 1] = t[i]
+    end
+end
+
+function CartoonClubTH:prepareChapter(chapter, dt)
+    local content = downloadContent(self.Link .. "/" .. chapter.Manga.Link .. "/" .. chapter.Link)
+    local t = dt
+    for Link in (content:match('id="page_select1"(.-)</div>') or ""):gmatch('value="([^"]-)"') do
+        t[#t + 1] = Link
+    end
+end
+
+function CartoonClubTH:loadChapterPage(link, dt)
+    local content = downloadContent(link)
+    dt.Link = content:match('name="img_page"[^>]-src="([^"]-)"'):gsub("^%s*", ""):gsub("%s*$", ""):gsub("\\/","/")
+end

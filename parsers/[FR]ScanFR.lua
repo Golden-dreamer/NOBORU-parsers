@@ -1,1 +1,81 @@
-ScanFR=Parser:new("ScanFR","https://www.scan-fr.org","FRA","SCANFRA",4)local function a(b)return b:gsub("&#([^;]-);",function(c)local d=tonumber("0"..c)or tonumber(c)return d and u8c(d)or"&#"..c..";"end):gsub("&(.-);",function(c)return HTML_entities and HTML_entities[c]and u8c(HTML_entities[c])or"&"..c..";"end)end;local function e(f)local g={}Threads.insertTask(g,{Type="StringRequest",Link=f,Table=g,Index="text"})while Threads.check(g)do coroutine.yield(false)end;return g.text or""end;function ScanFR:getManga(f,h)local i=e(f)h.NoPages=true;for j,k,l in i:gmatch('<a href="([^"]-)" class="thumbnail">[^>]-src=\'([^\']-)\' alt=\'([^\']-)\' />[^<]-</a>')do local m="https://opfrcdn.xyz/uploads/manga/"..(j:match("manga/([^/]*)")or"").."/cover/cover_250x350.jpg"h[#h+1]=CreateManga(a(l),j,m,self.ID,j)h.NoPages=false;coroutine.yield(false)end end;function ScanFR:getPopularManga(n,h)self:getManga(self.Link.."/filterList?sortBy=views&asc=false&page="..n,h)end;function ScanFR:searchManga(o,n,h)self:getManga(self.Link.."/filterList?alpha="..o.."&sortBy=views&asc=false&page="..n,h)end;function ScanFR:getChapters(p,h)local i=e(p.Link)local q=i:match('class="well">.-<p[^>]->(.-)</div>')or""h.Description=a(q:gsub("<.->",""):gsub("^%s+",""):gsub("%s+$",""))local r={}for j,l,s in i:gmatch('chapter%-title%-rtlrr">[^<]-<a href="([^"]-)">([^<]-)</a>.-<em>(.-)</em>')do r[#r+1]={Name=a(l..(s~=""and":"..s or"")),Link=j,Pages={},Manga=p}end;for t=#r,1,-1 do h[#h+1]=r[t]end end;function ScanFR:prepareChapter(u,h)local i=e(u.Link)for j in i:gmatch('img%-responsive"[^>]-data%-src=[\'"]%s*([^\'"]-)%s*[\'"]')do h[#h+1]=j end end;function ScanFR:loadChapterPage(f,h)h.Link=f end
+ScanFR = Parser:new("ScanFR", "https://www.scan-fr.org", "FRA", "SCANFRA", 4)
+
+local function stringify(string)
+	return string:gsub(
+		"&#([^;]-);",
+		function(a)
+			local x = tonumber("0" .. a) or tonumber(a)
+			return x and u8c(x) or "&#" .. a .. ";"
+		end
+	):gsub(
+		"&(.-);",
+		function(a)
+			return HTML_entities and HTML_entities[a] and u8c(HTML_entities[a]) or "&" .. a .. ";"
+		end
+	)
+end
+
+local function downloadContent(link)
+	local f = {}
+	Threads.insertTask(
+		f,
+		{
+			Type = "StringRequest",
+			Link = link,
+			Table = f,
+			Index = "text"
+		}
+	)
+	while Threads.check(f) do
+		coroutine.yield(false)
+	end
+	return f.text or ""
+end
+
+function ScanFR:getManga(link, dt)
+	local content = downloadContent(link)
+	dt.NoPages = true
+	for Link, ImageLink, Name in content:gmatch('<a href="([^"]-)" class="thumbnail">[^>]-src=\'([^\']-)\' alt=\'([^\']-)\' />[^<]-</a>') do
+		local cover = "https://opfrcdn.xyz/uploads/manga/" .. (Link:match("manga/([^/]*)") or "") .. "/cover/cover_250x350.jpg"
+		dt[#dt + 1] = CreateManga(stringify(Name), Link, cover, self.ID, Link)
+		dt.NoPages = false
+		coroutine.yield(false)
+	end
+end
+
+function ScanFR:getPopularManga(page, dt)
+	self:getManga(self.Link .. "/filterList?sortBy=views&asc=false&page=" .. page, dt)
+end
+
+function ScanFR:searchManga(search, page, dt)
+	self:getManga(self.Link .. "/filterList?alpha=" .. search .. "&sortBy=views&asc=false&page=" .. page, dt)
+end
+
+function ScanFR:getChapters(manga, dt)
+	local content = downloadContent(manga.Link)
+	local description = content:match('class="well">.-<p[^>]->(.-)</div>') or ""
+	dt.Description = stringify(description:gsub("<.->", ""):gsub("^%s+", ""):gsub("%s+$", ""))
+	local t = {}
+	for Link, Name, SubName in content:gmatch('chapter%-title%-rtlrr">[^<]-<a href="([^"]-)">([^<]-)</a>.-<em>(.-)</em>') do
+		t[#t + 1] = {
+			Name = stringify(Name .. (SubName ~= "" and (":" .. SubName) or "")),
+			Link = Link,
+			Pages = {},
+			Manga = manga
+		}
+	end
+	for i = #t, 1, -1 do
+		dt[#dt + 1] = t[i]
+	end
+end
+
+function ScanFR:prepareChapter(chapter, dt)
+	local content = downloadContent(chapter.Link)
+	for Link in content:gmatch('img%-responsive"[^>]-data%-src=[\'"]%s*([^\'"]-)%s*[\'"]') do
+		dt[#dt + 1] = Link
+	end
+end
+
+function ScanFR:loadChapterPage(link, dt)
+	dt.Link = link
+end

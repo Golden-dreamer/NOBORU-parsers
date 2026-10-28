@@ -1,1 +1,82 @@
-LeoMangas=Parser:new("LeoMangas","https://leomangas.xyz","ESP","LEOMANGASSPA",1)LeoMangas.Disabled=true;local function a(b)return b:gsub("&#([^;]-);",function(c)local d=tonumber("0"..c)or tonumber(c)return d and u8c(d)or"&#"..c..";"end):gsub("&(.-);",function(c)return HTML_entities and HTML_entities[c]and u8c(HTML_entities[c])or"&"..c..";"end)end;local function e(f)local g={}Threads.insertTask(g,{Type="StringRequest",Link=f,Table=g,Index="text"})while Threads.check(g)do coroutine.yield(false)end;return g.text or""end;function LeoMangas:getManga(f,h)local i=e(f)h.NoPages=true;for j,k,l in i:gmatch('<a href="[^"]-/manga/([^"]-)"[^>]->[^>]-src=\'/*([^\']-)\' alt=\'([^\']-)\'>[^<]-</a>')do h[#h+1]=CreateManga(a(l),j,"https://"..k,self.ID,j)h.NoPages=false;coroutine.yield(false)end end;function LeoMangas:getPopularManga(m,h)self:getManga(self.Link.."/filterList?sortBy=views&asc=false&page="..m,h)end;function LeoMangas:searchManga(n,m,h)self:getManga(self.Link.."/filterList?alpha="..n.."&sortBy=views&asc=false&page="..m,h)end;function LeoMangas:getChapters(o,h)local i=e(self.Link.."/manga/"..o.Link)local p={}for j,l in i:gmatch('chapter%-title%-rtl">%s*<a href="[^"]-([^/"]*)">([^<]-)</a>')do p[#p+1]={Name=a(l),Link=j,Pages={},Manga=o}end;for q=#p,1,-1 do h[#h+1]=p[q]end end;function LeoMangas:prepareChapter(r,h)local i=e(self.Link.."/manga/"..r.Manga.Link.."/"..r.Link)for j in i:gmatch('img%-responsive"[^>]-data%-src=\'%s*/*([^\']-)%s*\'')do h[#h+1]="https://"..j end end;function LeoMangas:loadChapterPage(f,h)h.Link=f end
+LeoMangas = Parser:new("LeoMangas", "https://leomangas.xyz", "ESP", "LEOMANGASSPA", 1)
+
+--- Site is dead
+LeoMangas.Disabled = true
+
+local function stringify(string)
+	return string:gsub(
+		"&#([^;]-);",
+		function(a)
+			local number = tonumber("0" .. a) or tonumber(a)
+			return number and u8c(number) or "&#" .. a .. ";"
+		end
+	):gsub(
+		"&(.-);",
+		function(a)
+			return HTML_entities and HTML_entities[a] and u8c(HTML_entities[a]) or "&" .. a .. ";"
+		end
+	)
+end
+
+local function downloadContent(link)
+	local f = {}
+	Threads.insertTask(
+		f,
+		{
+			Type = "StringRequest",
+			Link = link,
+			Table = f,
+			Index = "text"
+		}
+	)
+	while Threads.check(f) do
+		coroutine.yield(false)
+	end
+	return f.text or ""
+end
+
+function LeoMangas:getManga(link, dt)
+	local content = downloadContent(link)
+	dt.NoPages = true
+	for Link, ImageLink, Name in content:gmatch('<a href="[^"]-/manga/([^"]-)"[^>]->[^>]-src=\'/*([^\']-)\' alt=\'([^\']-)\'>[^<]-</a>') do
+		dt[#dt + 1] = CreateManga(stringify(Name), Link, "https://" .. ImageLink, self.ID, Link)
+		dt.NoPages = false
+		coroutine.yield(false)
+	end
+end
+
+function LeoMangas:getPopularManga(page, dt)
+	self:getManga(self.Link .. "/filterList?sortBy=views&asc=false&page=" .. page, dt)
+end
+
+function LeoMangas:searchManga(search, page, dt)
+	self:getManga(self.Link .. "/filterList?alpha=" .. search .. "&sortBy=views&asc=false&page=" .. page, dt)
+end
+
+function LeoMangas:getChapters(manga, dt)
+	local content = downloadContent(self.Link .. "/manga/" .. manga.Link)
+	local t = {}
+
+	for Link, Name in content:gmatch('chapter%-title%-rtl">%s*<a href="[^"]-([^/"]*)">([^<]-)</a>') do
+		t[#t + 1] = {
+			Name = stringify(Name),
+			Link = Link,
+			Pages = {},
+			Manga = manga
+		}
+	end
+	for i = #t, 1, -1 do
+		dt[#dt + 1] = t[i]
+	end
+end
+
+function LeoMangas:prepareChapter(chapter, dt)
+	local content = downloadContent(self.Link .. "/manga/" .. chapter.Manga.Link .. "/" .. chapter.Link)
+	for Link in content:gmatch('img%-responsive"[^>]-data%-src=\'%s*/*([^\']-)%s*\'') do
+		dt[#dt + 1] = "https://" .. Link
+	end
+end
+
+function LeoMangas:loadChapterPage(link, dt)
+	dt.Link = link
+end

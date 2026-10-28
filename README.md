@@ -41,6 +41,8 @@ This repo is created to store parsers for NOBORU app on PS vita
   Throw `*.lua` file to `ux0:data/noboru/parsers/` and launch app
 
 ## Creating parsers
+  Edit `parsers/*.lua` directly. Keep useful comments and formatting; this is the only parser directory. Publish the changes to `master`, then update catalogues in NOBORU. Parser-only edits do not require a new VPK.
+
   For understanding how to create parser you can check `parsers/[JP]RawDevArt.lua`, there all functions described and you can see how it all works.
 
 ## Tables
@@ -123,7 +125,7 @@ This repo is created to store parsers for NOBORU app on PS vita
   ---@param filter? table
   ---Adds searched manga(see Manga Table) with `search` string to `dest_table`
   ---If page was last sets dest_table.NoPages to `true`
-  ---For `filter` example search for `/source/[RAW]RawDevArt.lua` file
+  ---For `filter` example search for `/parsers/[RAW]RawDevArt.lua` file
   function Parser:searchManga(search, page, dest_table, filter)
   
   ---@param manga table
@@ -145,7 +147,7 @@ This repo is created to store parsers for NOBORU app on PS vita
 
 ## Fork runtime extensions
 
-The existing parser methods above still apply. Keep readable code in `source/` and synchronize the corresponding Lua text in `parsers/`; the app downloads the latter. Preserve parser IDs and increment the parser version when changing its behavior.
+The existing parser methods above still apply. Keep the single readable version of each parser in `parsers/`. The app downloads these same Lua files directly from `parsers/` on `master`; no minification, compilation or copy to another directory is needed. Preserve parser IDs and increment the parser version when changing its behavior.
 
 ### Dynamic filters and large option lists
 
@@ -173,7 +175,7 @@ All expanded filters have an in-list search row. Local filtering retains origina
 
 ### Random and shared helpers
 
-Optional `Parser:getRandomManga(page, dest_table)` enables the Random mode. Return ordinary manga entries and set `dest_table.NoPages=true` when there is no next page. Re-selecting Random requests a new result.
+Optional `Parser:getRandomManga(page, dest_table)` enables the Random mode. Return ordinary manga entries and set `dest_table.NoPages=true` when there is no next page. Re-selecting Random requests a new result. If the first Random request returns exactly one entry, the app collects up to 24 distinct entries using fresh page-1 calls. Collection stops after 36 calls, five consecutive duplicate-only responses, an empty response or an error. Partial results remain visible and automatic pagination is disabled for that collection. A parser may lower the target with `RandomBatchSize`. Multi-entry Random responses retain their original pagination; other catalogue modes are unaffected.
 
 `00_NoboruSupport.lua` provides `request`, `requestJSON`, `decodeJSON`, text/URL helpers and the option-search helpers. Requests accept a URL or a task link table with headers, cookies and POST data. Returned page/image links can also be tables such as `{Link=url, Header1="Referer: ..."}`. Attribute names passed to `U.attr` are Lua patterns: escape hyphens, e.g. `data%-src`.
 

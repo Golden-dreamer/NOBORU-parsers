@@ -1,1 +1,101 @@
-ReaperScans=Parser:new("Reaper Scans","https://reaperscans.com","ENG","REAPERSCANSEN",2)ReaperScans.Disabled=true;REAPERSCANS_GET_TRENDING="/page/%s/?s&post_type=wp-manga&op&author&artist&release&adult&m_orderby=trending"REAPERSCANS_GET_LATEST="/page/%s/?s&post_type=wp-manga&op&author&artist&release&adult&m_orderby=latest"REAPERSCANS_GET_SEARCH="/page/%s/?s=%s&post_type=wp-manga"local function a(b)if u8c then return b:gsub("&#([^;]-);",function(c)local d=tonumber("0"..c)or tonumber(c)return d and u8c(d)or"&#"..c..";"end):gsub("&([^;]-);",function(c)return HTML_entities and HTML_entities[c]and u8c(HTML_entities[c])or"&"..c..";"end)else return b end end;local function e(f)local g={}Threads.insertTask(g,{Type="StringRequest",Link=f,Table=g,Index="string"})while Threads.check(g)do coroutine.yield(false)end;return g.string or""end;function ReaperScans:getManga(f,h)local i=e(f)h.NoPages=true;for j,k,l,m in i:gmatch('class="row.-<a href="[^"]-/series/([^"]-)/" title="([^"]-)">.-src="([^"]-)".-Genres%s*</h5>%s*</div>(.-)</div>')do if m:find("Novel")==nil then h[#h+1]=CreateManga(a(k),j,l:gsub("%%","%%%%"),self.ID,self.Link.."/series/"..j.."/")end;h.NoPages=false;coroutine.yield(false)end end;function ReaperScans:getPopularManga(n,h)self:getManga(self.Link..REAPERSCANS_GET_TRENDING:format(n),h)end;function ReaperScans:getLatestManga(n,h)self:getManga(self.Link..REAPERSCANS_GET_LATEST:format(n),h)end;function ReaperScans:searchManga(o,n,h)self:getManga(self.Link..REAPERSCANS_GET_SEARCH:format(n,o),h)end;function ReaperScans:getChapters(p,h)local i=e(self.Link.."/series/"..p.Link.."/")local q=i:match('Type%s*</h5>%s*</div>(.-)</div>')or""if q:find("Novel")~=nil then Notifications.pushUnique("Novels not supported! Sorry :(",800)return end;local r={}for j,k in i:gmatch('chapter%-link">%s*<a href=".-/([^/]-)/"[^>]->%s*<[^>]->([^<]-)</p>')do if j then r[#r+1]={Name=k,Link=j,Pages={},Manga=p}end end;for s=#r,1,-1 do h[#h+1]=r[s]end end;function ReaperScans:prepareChapter(t,h)local i=e(self.Link.."/series/"..t.Manga.Link.."/"..t.Link.."/")for j in i:gmatch('id="image%-[0-9]*" data%-src="%s*([^"]-)%s*"')do h[#h+1]=j:gsub("\\/","/"):gsub("%%","%%%%")end end;function ReaperScans:loadChapterPage(f,h)h.Link=f end
+ReaperScans = Parser:new("Reaper Scans", "https://reaperscans.com", "ENG", "REAPERSCANSEN", 2)
+
+ReaperScans.Disabled = true --Reason: JavaScript check
+
+REAPERSCANS_GET_TRENDING = "/page/%s/?s&post_type=wp-manga&op&author&artist&release&adult&m_orderby=trending"
+REAPERSCANS_GET_LATEST = "/page/%s/?s&post_type=wp-manga&op&author&artist&release&adult&m_orderby=latest"
+REAPERSCANS_GET_SEARCH = "/page/%s/?s=%s&post_type=wp-manga"
+
+local function stringify(string)
+	if u8c then
+		return string:gsub(
+			"&#([^;]-);",
+			function(a)
+				local number = tonumber("0" .. a) or tonumber(a)
+				return number and u8c(number) or "&#" .. a .. ";"
+			end
+		):gsub(
+			"&([^;]-);",
+			function(a)
+				return HTML_entities and HTML_entities[a] and u8c(HTML_entities[a]) or "&" .. a .. ";"
+			end
+		)
+	else
+		return string
+	end
+end
+
+local function downloadContent(link)
+	local file = {}
+	Threads.insertTask(
+		file,
+		{
+			Type = "StringRequest",
+			Link = link,
+			Table = file,
+			Index = "string"
+		}
+	)
+	while Threads.check(file) do
+		coroutine.yield(false)
+	end
+	return file.string or ""
+end
+
+function ReaperScans:getManga(link, dt)
+	local content = downloadContent(link)
+	dt.NoPages = true
+	for Link, Name, ImageLink, Genres in content:gmatch('class="row.-<a href="[^"]-/series/([^"]-)/" title="([^"]-)">.-src="([^"]-)".-Genres%s*</h5>%s*</div>(.-)</div>') do
+		if Genres:find("Novel") == nil then
+			dt[#dt + 1] = CreateManga(stringify(Name), Link, ImageLink:gsub("%%", "%%%%"), self.ID, self.Link .. "/series/" .. Link .. "/")
+		end
+		dt.NoPages = false
+		coroutine.yield(false)
+	end
+end
+
+function ReaperScans:getPopularManga(page, dt)
+	self:getManga(self.Link .. REAPERSCANS_GET_TRENDING:format(page), dt)
+end
+
+function ReaperScans:getLatestManga(page, dt)
+	self:getManga(self.Link .. REAPERSCANS_GET_LATEST:format(page), dt)
+end
+
+function ReaperScans:searchManga(search, page, dt)
+	self:getManga(self.Link .. REAPERSCANS_GET_SEARCH:format(page, search), dt)
+end
+
+function ReaperScans:getChapters(manga, dt)
+	local content = downloadContent(self.Link .. "/series/" .. manga.Link .. "/")
+	local Type = content:match('Type%s*</h5>%s*</div>(.-)</div>') or ""
+	if Type:find("Novel") ~= nil then
+		Notifications.pushUnique("Novels not supported! Sorry :(", 800)
+		return
+	end
+	local t = {}
+	for Link, Name in content:gmatch('chapter%-link">%s*<a href=".-/([^/]-)/"[^>]->%s*<[^>]->([^<]-)</p>') do
+		if Link then
+			t[#t + 1] = {
+				Name = Name,
+				Link = Link,
+				Pages = {},
+				Manga = manga
+			}
+		end
+	end
+	for i = #t, 1, -1 do
+		dt[#dt + 1] = t[i]
+	end
+end
+
+function ReaperScans:prepareChapter(chapter, dt)
+	local content = downloadContent(self.Link .. "/series/" .. chapter.Manga.Link .. "/" .. chapter.Link .. "/")
+	for Link in content:gmatch('id="image%-[0-9]*" data%-src="%s*([^"]-)%s*"') do
+		dt[#dt + 1] = Link:gsub("\\/", "/"):gsub("%%", "%%%%")
+	end
+end
+
+function ReaperScans:loadChapterPage(link, dt)
+	dt.Link = link
+end

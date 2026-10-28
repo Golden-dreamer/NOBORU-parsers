@@ -1,1 +1,110 @@
-LoveHug=Parser:new("LoveHug","https://lovehug.net","RAW","LOVEHUGRAW",4)LoveHug.Disabled=true;local function a(b)return b:gsub("&#([^;]-);",function(c)local d=tonumber("0"..c)or tonumber(c)return d and u8c(d)or"&#"..c..";"end):gsub("&(.-);",function(c)return HTML_entities and HTML_entities[c]and u8c(HTML_entities[c])or"&"..c..";"end)end;local e="https://lovehug.net/manga-list.html?listType=pagination&page=%s&artist=&author=&group=&m_status=&name=&genre=&ungenre=&magazine=&sort=%s&sort_type=%s"local f="https://lovehug.net/manga-list.html?listType=pagination&page=%s&artist=&author=&group=&m_status=&name=%s&genre=&ungenre=&magazine=&sort=views&sort_type=DESC"local function g(h,i,j)return e:format(h,i,j)end;local function k(h,l)return f:format(h,l)end;local function m(n)local o={}Threads.insertTask(o,{Type="StringRequest",Link=n,Table=o,Index="text"})while Threads.check(o)do coroutine.yield(false)end;return o.text or""end;function LoveHug:getManga(n,p)local q=m(n)p.NoPages=true;local r,s=q:match("Page (%d+) of (%d+)")for t,u,v in q:gmatch('<div class="thumb%-item%-flow.-data%-bg="([^"]-)".-class="thumb_attr series%-title">.-href="/(.-)"[^>]->([^<]-)<')do p[#p+1]=CreateManga(a(v),u,{Link=t,Header1="Referer: https://lovehug.net/manga-list.html"},self.ID,self.Link.."/"..u)if tonumber(r)<tonumber(s)then p.NoPages=false end;coroutine.yield(false)end end;function LoveHug:getPopularManga(h,p)self:getManga(g(h,"views","DESC"),p)end;function LoveHug:getLatestManga(h,p)self:getManga(g(h,"last_update","DESC"),p)end;function LoveHug:getAZManga(h,p)self:getManga(g(h,"name","DESC"),p)end;function LoveHug:searchManga(w,h,p)self:getManga(k(h,w),p)end;function LoveHug:getChapters(x,p)local q=m(self.Link.."/"..x.Link)local y={}for u,v in q:gmatch('<a href="/[^/>]-/([^/>]-/)" target="_blank" title=[^>]->[^<]-<li>[^<]-<div class="chapter%-name text%-truncate">([^<]-)</div>')do y[#y+1]={Name=a(v),Link=u,Pages={},Manga=x}end;for z=#y,1,-1 do p[#p+1]=y[z]end end;function LoveHug:prepareChapter(A,p)local q=m(self.Link.."/"..A.Manga.Link..A.Link)for u in q:gmatch("<img class='[^']-chapter%-img' [^>]+src[^>]-='%s*([^']-)%s*'")do p[#p+1]={Link=u:gsub("[\r\n]",""),Header1="Referer: https://lovehug.net/manga-list.html"}end end;function LoveHug:loadChapterPage(n,p)p.Link=n end
+--[[
+	Links structure
+	Manga.Link = 964/
+	Chapter.Link = 32976/
+--]]
+LoveHug = Parser:new("LoveHug", "https://lovehug.net", "RAW", "LOVEHUGRAW", 4)
+
+LoveHug.Disabled = true --Reason is simple LoveHug is now mobile app with login password (currently not supported)
+
+local function stringify(string)
+	return string:gsub(
+		"&#([^;]-);",
+		function(a)
+			local x = tonumber("0" .. a) or tonumber(a)
+			return x and u8c(x) or "&#" .. a .. ";"
+		end
+	):gsub(
+		"&(.-);",
+		function(a)
+			return HTML_entities and HTML_entities[a] and u8c(HTML_entities[a]) or "&" .. a .. ";"
+		end
+	)
+end
+
+local manga_list = "https://lovehug.net/manga-list.html?listType=pagination&page=%s&artist=&author=&group=&m_status=&name=&genre=&ungenre=&magazine=&sort=%s&sort_type=%s"
+local manga_srch = "https://lovehug.net/manga-list.html?listType=pagination&page=%s&artist=&author=&group=&m_status=&name=%s&genre=&ungenre=&magazine=&sort=views&sort_type=DESC"
+
+local function genMangaListLink(page, sort, sort_type)
+	return manga_list:format(page, sort, sort_type)
+end
+
+local function genMangaSearchLink(page, search_string)
+	return manga_srch:format(page, search_string)
+end
+
+local function downloadContent(link)
+	local f = {}
+	Threads.insertTask(
+		f,
+		{
+			Type = "StringRequest",
+			Link = link,
+			Table = f,
+			Index = "text"
+		}
+	)
+	while Threads.check(f) do
+		coroutine.yield(false)
+	end
+	return f.text or ""
+end
+
+function LoveHug:getManga(link, dt)
+	local content = downloadContent(link)
+	dt.NoPages = true
+	local pageA, pageB = content:match("Page (%d+) of (%d+)")
+	for ImageLink, Link, Name in content:gmatch('<div class="thumb%-item%-flow.-data%-bg="([^"]-)".-class="thumb_attr series%-title">.-href="/(.-)"[^>]->([^<]-)<') do
+		dt[#dt + 1] = CreateManga(stringify(Name), Link, {Link = ImageLink, Header1 = "Referer: https://lovehug.net/manga-list.html"}, self.ID, self.Link .. "/" .. Link)
+		if tonumber(pageA) < tonumber(pageB) then
+			dt.NoPages = false
+		end
+		coroutine.yield(false)
+	end
+end
+
+function LoveHug:getPopularManga(page, dt)
+	self:getManga(genMangaListLink(page, "views", "DESC"), dt)
+end
+
+function LoveHug:getLatestManga(page, dt)
+	self:getManga(genMangaListLink(page, "last_update", "DESC"), dt)
+end
+
+function LoveHug:getAZManga(page, dt)
+	self:getManga(genMangaListLink(page, "name", "DESC"), dt)
+end
+
+function LoveHug:searchManga(search, page, dt)
+	self:getManga(genMangaSearchLink(page, search), dt)
+end
+
+function LoveHug:getChapters(manga, dt)
+	local content = downloadContent(self.Link .. "/" .. manga.Link)
+	local t = {}
+	for Link, Name in content:gmatch('<a href="/[^/>]-/([^/>]-/)" target="_blank" title=[^>]->[^<]-<li>[^<]-<div class="chapter%-name text%-truncate">([^<]-)</div>') do
+		t[#t + 1] = {
+			Name = stringify(Name),
+			Link = Link,
+			Pages = {},
+			Manga = manga
+		}
+	end
+	for i = #t, 1, -1 do
+		dt[#dt + 1] = t[i]
+	end
+end
+
+function LoveHug:prepareChapter(chapter, dt)
+	local content = downloadContent(self.Link .. "/" .. chapter.Manga.Link .. chapter.Link)
+	for Link in content:gmatch("<img class='[^']-chapter%-img' [^>]+src[^>]-='%s*([^']-)%s*'") do
+		dt[#dt + 1] = {
+			Link = Link:gsub("[\r\n]", ""),
+			Header1 = "Referer: https://lovehug.net/manga-list.html"
+		}
+	end
+end
+
+function LoveHug:loadChapterPage(link, dt)
+	dt.Link = link
+end

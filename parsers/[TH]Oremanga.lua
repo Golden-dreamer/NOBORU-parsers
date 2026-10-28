@@ -1,1 +1,94 @@
-Oremanga=Parser:new("Oremanga","https://www.oremanga.net","THA","OREMANGATHA",2)local function a(b)return b:gsub("&#([^;]-);",function(c)local d=tonumber("0"..c)or tonumber(c)return d and u8c(d)or"&#"..c..";"end):gsub("&(.-);",function(c)return HTML_entities and HTML_entities[c]and u8c(HTML_entities[c])or"&"..c..";"end)end;local function e(f)local g={}Threads.insertTask(g,{Type="StringRequest",Link=f,Table=g,Index="string"})while Threads.check(g)do coroutine.yield(false)end;return g.string or""end;function Oremanga:getManga(f,h)local i=e(f)local j=h;j.NoPages=true;for k,l,m in i:gmatch('flexbox2%-item">.-href="[^"]*/([^"]-)/" title="([^"]-)".-img src="([^"]-)"')do local n=CreateManga(a(l),k,m,self.ID,self.Link.."/series/"..k)if n then j.NoPages=false;j[#j+1]=n end;coroutine.yield(false)end end;function Oremanga:getPopularManga(o,h)self:getManga(self.Link.."/advance-search/page/"..o.."/?title=&author&yearx&status&type&order=popular",h)end;function Oremanga:getLatestManga(o,h)self:getManga(self.Link.."/advance-search/page/"..o.."/?title=&author&yearx&status&type&order=update",h)end;function Oremanga:getAZManga(o,h)self:getManga(self.Link.."/advance-search/page/"..o.."/?title=&author&yearx&status&type&order=title",h)end;function Oremanga:searchManga(p,o,h)self:getManga(self.Link.."/advance-search/page/"..o.."/?title="..p.."&author&yearx&status&type&order=popular",h)end;function Oremanga:getChapters(n,h)local i=e(self.Link.."/manga/"..n.Link)local q=(i:match('series%-synops">(.-)</div>')or""):gsub("^%s+",""):gsub("%s+$",""):gsub("<[^>]->","")h.Description=a(q)local j={}for k,l in i:gmatch('flexch%-book">.-href="[^"]*/([^"]-/[^"]-)/" title="([^"]-)"')do j[#j+1]={Name=a(l),Link=k,Pages={},Manga=n}end;for r=#j,1,-1 do h[#h+1]=j[r]end end;function Oremanga:prepareChapter(s,h)local i=e(self.Link.."/"..s.Link)local j=h;for k in(i:match('reader%-area">(.-)</div>')or""):gmatch('src="([^"]-)"')do local f=k:gsub("\\/","/")j[#j+1]=f end end;function Oremanga:loadChapterPage(f,h)h.Link=f end
+Oremanga = Parser:new("Oremanga", "https://www.oremanga.net", "THA", "OREMANGATHA", 2)
+
+local function stringify(string)
+    return string:gsub(
+        "&#([^;]-);",
+        function(a)
+            local number = tonumber("0" .. a) or tonumber(a)
+            return number and u8c(number) or "&#" .. a .. ";"
+        end
+    ):gsub(
+        "&(.-);",
+        function(a)
+            return HTML_entities and HTML_entities[a] and u8c(HTML_entities[a]) or "&" .. a .. ";"
+        end
+    )
+end
+
+local function downloadContent(link)
+    local file = {}
+    Threads.insertTask(
+        file,
+        {
+            Type = "StringRequest",
+            Link = link,
+            Table = file,
+            Index = "string"
+        }
+    )
+    while Threads.check(file) do
+        coroutine.yield(false)
+    end
+    return file.string or ""
+end
+
+function Oremanga:getManga(link, dt)
+    local content = downloadContent(link)
+    local t = dt
+    t.NoPages = true
+    for Link, Name, ImageLink in content:gmatch('flexbox2%-item">.-href="[^"]*/([^"]-)/" title="([^"]-)".-img src="([^"]-)"') do
+        local manga = CreateManga(stringify(Name), Link, ImageLink, self.ID, self.Link .. "/series/" .. Link)
+        if manga then
+            t.NoPages = false
+            t[#t + 1] = manga
+        end
+        coroutine.yield(false)
+    end
+end
+
+function Oremanga:getPopularManga(page, dt)
+    self:getManga(self.Link .. "/advance-search/page/" .. page .. "/?title=&author&yearx&status&type&order=popular", dt)
+end
+
+function Oremanga:getLatestManga(page, dt)
+    self:getManga(self.Link .. "/advance-search/page/" .. page .. "/?title=&author&yearx&status&type&order=update", dt)
+end
+
+function Oremanga:getAZManga(page, dt)
+    self:getManga(self.Link .. "/advance-search/page/" .. page .. "/?title=&author&yearx&status&type&order=title", dt)
+end
+
+function Oremanga:searchManga(search, page, dt)
+    self:getManga(self.Link .. "/advance-search/page/" .. page .. "/?title=" .. search .. "&author&yearx&status&type&order=popular", dt)
+end
+
+function Oremanga:getChapters(manga, dt)
+    local content = downloadContent(self.Link .. "/manga/" .. manga.Link)
+    local description = (content:match('series%-synops">(.-)</div>') or ""):gsub("^%s+", ""):gsub("%s+$", ""):gsub("<[^>]->", "")
+    dt.Description = stringify(description)
+    local t = {}
+    for Link, Name in content:gmatch('flexch%-book">.-href="[^"]*/([^"]-/[^"]-)/" title="([^"]-)"') do
+        t[#t + 1] = {
+            Name = stringify(Name),
+            Link = Link,
+            Pages = {},
+            Manga = manga
+        }
+    end
+    for i = #t, 1, -1 do
+        dt[#dt + 1] = t[i]
+    end
+end
+
+function Oremanga:prepareChapter(chapter, dt)
+    local content = downloadContent(self.Link .. "/" .. chapter.Link)
+    local t = dt
+    for Link in (content:match('reader%-area">(.-)</div>') or ""):gmatch('src="([^"]-)"') do
+        local link = Link:gsub("\\/", "/")
+        t[#t + 1] = link
+    end
+end
+
+function Oremanga:loadChapterPage(link, dt)
+    dt.Link = link
+end

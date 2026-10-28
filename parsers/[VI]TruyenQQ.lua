@@ -1,1 +1,103 @@
-if Settings.Version>0.35 then TruyenQQ=Parser:new("TruyenQQ","http://truyenqqpro.com","VIE","TRUYENQQVIE",5)local function a(b)return b:gsub("&#([^;]-);",function(c)local d=tonumber("0"..c)or tonumber(c)return d and u8c(d)or"&#"..c..";"end):gsub("&(.-);",function(c)return HTML_entities and HTML_entities[c]and u8c(HTML_entities[c])or"&"..c..";"end)end;local e;local function f(g)local h={}Threads.insertTask(h,{Type="StringRequest",Link=g,Table=h,Index="string",Cookie=e and e.."; path=/"or""})while Threads.check(h)do coroutine.yield(false)end;if not e then e=h.string:match('document%.cookie%s-=%s-"(.-)"')return f(g)end;return h.string or""end;function TruyenQQ:getManga(g,i)local j=f(g)local k=i;local l=true;for m,n,o in j:gmatch('"book_avatar">.-src="([^"]-)".-book_info">.-<a.-href="[^"]-/truyen%-tranh/([^"]-)">([^>]-)</a>')do local p=CreateManga(a(o),n,{Link=m,Header1="Referer: "..g},self.ID,self.Link.."/truyen-tranh/"..n)if p then k[#k+1]=p;l=false end;coroutine.yield(false)end;if l then k.NoPages=true end end;function TruyenQQ:getPopularManga(q,i)self:getManga(self.Link.."/truyen-yeu-thich/trang-"..q..".html",i)end;function TruyenQQ:getLatestManga(q,i)self:getManga(self.Link.."/truyen-moi-cap-nhat/trang-"..q..".html",i)end;function TruyenQQ:searchManga(r,q,i)self:getManga(self.Link.."/tim-kiem/trang-"..q..".html?q="..r,i)end;function TruyenQQ:getChapters(p,i)local j=f(self.Link.."/truyen-tranh/"..p.Link)local s=(j:match('class="story%-detail%-info.-p>(.-)</p>')or""):gsub("<br>","\n"):gsub("<.->",""):gsub("\n+","\n"):gsub("^%s+",""):gsub("%s+$","")i.Description=a(s)local k={}for n,o in j:gmatch('chapter%-item">.-<a[^>]-href="[^"]-/truyen%-tranh/([^"]-)">([^>]-)</a>')do k[#k+1]={Name=a(o):gsub("%s+",""),Link=n,Pages={},Manga=p}end;for t=#k,1,-1 do i[#i+1]=k[t]end end;function TruyenQQ:prepareChapter(u,i)local j=f(self.Link.."/truyen-tranh/"..u.Link)local k=i;for n in j:gmatch('<img class="lazy".-src="([^"]-)"')do k[#k+1]=n.."\n"..self.Link.."/truyen-tranh/"..u.Link end end;function TruyenQQ:loadChapterPage(g,i)i.Link={Link=g:match("^(.-)\n")or"",Header1="Referer: "..(g:match("\n(.-)$")or"")}end end
+if Settings.Version > 0.35 then
+	TruyenQQ = Parser:new("TruyenQQ", "http://truyenqqpro.com", "VIE", "TRUYENQQVIE", 5)
+
+	local function stringify(string)
+		return string:gsub(
+			"&#([^;]-);",
+			function(a)
+				local x = tonumber("0" .. a) or tonumber(a)
+				return x and u8c(x) or "&#" .. a .. ";"
+			end
+		):gsub(
+			"&(.-);",
+			function(a)
+				return HTML_entities and HTML_entities[a] and u8c(HTML_entities[a]) or "&" .. a .. ";"
+			end
+		)
+	end
+
+	local cookie
+	local function downloadContent(link)
+		local file = {}
+		Threads.insertTask(
+			file,
+			{
+				Type = "StringRequest",
+				Link = link,
+				Table = file,
+				Index = "string",
+				Cookie = cookie and (cookie .. "; path=/") or ""
+			}
+		)
+		while Threads.check(file) do
+			coroutine.yield(false)
+		end
+		if not cookie then
+			cookie = file.string:match('document%.cookie%s-=%s-"(.-)"')
+			return downloadContent(link)
+		end
+		return file.string or ""
+	end
+
+	function TruyenQQ:getManga(link, dt)
+		local content = downloadContent(link)
+		local t = dt
+		local done = true
+		for ImageLink, Link, Name in content:gmatch('"book_avatar">.-src="([^"]-)".-book_info">.-<a.-href="[^"]-/truyen%-tranh/([^"]-)">([^>]-)</a>') do
+			local manga = CreateManga(stringify(Name), Link, {Link = ImageLink, Header1 = "Referer: " .. link}, self.ID, self.Link .. "/truyen-tranh/" .. Link)
+			if manga then
+				t[#t + 1] = manga
+				done = false
+			end
+			coroutine.yield(false)
+		end
+		if done then
+			t.NoPages = true
+		end
+	end
+
+	function TruyenQQ:getPopularManga(page, dt)
+		self:getManga(self.Link .. "/truyen-yeu-thich/trang-" .. page .. ".html", dt)
+	end
+
+	function TruyenQQ:getLatestManga(page, dt)
+		self:getManga(self.Link .. "/truyen-moi-cap-nhat/trang-" .. page .. ".html", dt)
+	end
+
+	function TruyenQQ:searchManga(search, page, dt)
+		self:getManga(self.Link .. "/tim-kiem/trang-" .. page .. ".html?q=" .. search, dt)
+	end
+
+	function TruyenQQ:getChapters(manga, dt)
+		local content = downloadContent(self.Link .. "/truyen-tranh/" .. manga.Link)
+		local description = (content:match('class="story%-detail%-info.-p>(.-)</p>') or ""):gsub("<br>", "\n"):gsub("<.->", ""):gsub("\n+", "\n"):gsub("^%s+", ""):gsub("%s+$", "")
+		dt.Description = stringify(description)
+		local t = {}
+		for Link, Name in content:gmatch('chapter%-item">.-<a[^>]-href="[^"]-/truyen%-tranh/([^"]-)">([^>]-)</a>') do
+			t[#t + 1] = {
+				Name = stringify(Name):gsub("%s+", ""),
+				Link = Link,
+				Pages = {},
+				Manga = manga
+			}
+		end
+		for i = #t, 1, -1 do
+			dt[#dt + 1] = t[i]
+		end
+	end
+
+	function TruyenQQ:prepareChapter(chapter, dt)
+		local content = downloadContent(self.Link .. "/truyen-tranh/" .. chapter.Link)
+		local t = dt
+		for Link in content:gmatch('<img class="lazy".-src="([^"]-)"') do
+			t[#t + 1] = Link .. "\n" .. self.Link .. "/truyen-tranh/" .. chapter.Link
+		end
+	end
+
+	function TruyenQQ:loadChapterPage(link, dt)
+		dt.Link = {
+			Link = link:match("^(.-)\n") or "",
+			Header1 = "Referer: " .. (link:match("\n(.-)$") or "")
+		}
+	end
+end

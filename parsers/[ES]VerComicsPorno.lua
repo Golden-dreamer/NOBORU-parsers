@@ -1,1 +1,83 @@
-VerComicsPorno=Parser:new("VerComicsPorno","https://vercomicsporno.xxx","ESP","VERCOMICSPORNOESP",3)VerComicsPorno.NSFW=true;local function a(b)if u8c then return b:gsub("&#([^;]-);",function(c)local d=tonumber("0"..c)or tonumber(c)return d and u8c(d)or"&#"..c..";"end):gsub("&([^;]-);",function(c)return HTML_entities and HTML_entities[c]and u8c(HTML_entities[c])or"&"..c..";"end)else return b end end;local function e(f)local g={}Threads.insertTask(g,{Type="StringRequest",Link=f,Table=g,Index="string"})while Threads.check(g)do coroutine.yield(false)end;return g.string or""end;function VerComicsPorno:getManga(f,h)local i=e(f)h.NoPages=true;for j,k,l in i:gmatch('<div id="post%-.-href="[^"]-/([^/"]-)/" title="([^"]-)">.-src="([^"]-)"')do h[#h+1]=CreateManga(a(k:gsub("<[^>]->","")),j,l:gsub("%%","%%%%"),self.ID,self.Link.."/"..j.."/")h.NoPages=false;coroutine.yield(false)end end;function VerComicsPorno:getPopularManga(m,h)self:getManga(self.Link.."/page/"..m.."/",h)end;function VerComicsPorno:searchManga(n,m,h)self:getManga(self.Link.."/page/"..m.."/?s="..n,h)end;function VerComicsPorno:getChapters(o,h)local f,p=o.Link,"Leer"if f then h[#h+1]={Name=p,Link=f,Pages={},Manga=o}end end;function VerComicsPorno:prepareChapter(q,h)local i=e(self.Link.."/"..q.Link.."/")for f in i:gmatch('wp%-block%-image"><[^<]-><img src="([^"]-)"')do h[#h+1]=f:gsub("%%","%%%%")end end;function VerComicsPorno:loadChapterPage(f,h)h.Link={Link=f,Header1="Referer: "..self.Link}end
+VerComicsPorno = Parser:new("VerComicsPorno", "https://vercomicsporno.xxx", "ESP", "VERCOMICSPORNOESP", 3)
+
+VerComicsPorno.NSFW = true
+
+local function stringify(string)
+    if u8c then
+        return string:gsub(
+            "&#([^;]-);",
+            function(a)
+                local number = tonumber("0" .. a) or tonumber(a)
+                return number and u8c(number) or "&#" .. a .. ";"
+            end
+        ):gsub(
+            "&([^;]-);",
+            function(a)
+                return HTML_entities and HTML_entities[a] and u8c(HTML_entities[a]) or "&" .. a .. ";"
+            end
+        )
+    else
+        return string
+    end
+end
+
+local function downloadContent(link)
+    local file = {}
+    Threads.insertTask(
+        file,
+        {
+            Type = "StringRequest",
+            Link = link,
+            Table = file,
+            Index = "string"
+        }
+    )
+    while Threads.check(file) do
+        coroutine.yield(false)
+    end
+    return file.string or ""
+end
+
+function VerComicsPorno:getManga(link, dt)
+    local content = downloadContent(link)
+    dt.NoPages = true
+    for Link, Name, ImageLink in content:gmatch('<div id="post%-.-href="[^"]-/([^/"]-)/" title="([^"]-)">.-src="([^"]-)"') do
+        dt[#dt + 1] = CreateManga(stringify(Name:gsub("<[^>]->", "")), Link, ImageLink:gsub("%%", "%%%%"), self.ID, self.Link .. "/" .. Link .. "/")
+        dt.NoPages = false
+        coroutine.yield(false)
+    end
+end
+
+function VerComicsPorno:getPopularManga(page, dt)
+    self:getManga(self.Link .. "/page/" .. page .. "/", dt)
+end
+
+function VerComicsPorno:searchManga(search, page, dt)
+    self:getManga(self.Link .. "/page/" .. page .. "/?s=" .. search, dt)
+end
+
+function VerComicsPorno:getChapters(manga, dt)
+    local link, name = manga.Link, "Leer"
+    if link then
+        dt[#dt + 1] = {
+            Name = name,
+            Link = link,
+            Pages = {},
+            Manga = manga
+        }
+    end
+end
+
+function VerComicsPorno:prepareChapter(chapter, dt)
+    local content = downloadContent(self.Link .. "/" .. chapter.Link .. "/")
+    for link in content:gmatch('wp%-block%-image"><[^<]-><img src="([^"]-)"') do
+        dt[#dt + 1] = link:gsub("%%", "%%%%")
+    end
+end
+
+function VerComicsPorno:loadChapterPage(link, dt)
+    dt.Link = {
+        Link = link,
+        Header1 = "Referer: "..self.Link
+    }
+end

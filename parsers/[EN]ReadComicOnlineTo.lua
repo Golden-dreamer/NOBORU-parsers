@@ -1,1 +1,90 @@
-RComicOnlineTo=Parser:new("ReadComicOnline.to","https://readcomiconline.li","ENG","RCOMICONLINETOENG",3)local function a(string)return string:gsub("&#([^;]-);",function(b)local c=tonumber("0"..b)or tonumber(b)return c and u8c(c)or"&#"..b..";"end):gsub("&(.-);",function(b)return HTML_entities and HTML_entities[b]and u8c(HTML_entities[b])or"&"..b..";"end)end;local function d(e)local f={}Threads.insertTask(f,{Type="StringRequest",Link=e,Table=f,Index="text"})while Threads.check(f)do coroutine.yield(false)end;return f.text or""end;function RComicOnlineTo:getManga(e,g)local h=d(e)for i,j,k in h:gmatch('td title=\'[^<]-<img[^>]-src="([^"]-)".-href="([^"]-)">(.-)</a>')do if not i:find("^http")then i=self.Link..i end;g[#g+1]=CreateManga(a(k),j,i,self.ID,self.Link..j)g.NoPages=false;coroutine.yield(false)end end;function RComicOnlineTo:getLatestManga(l,g)self:getManga(self.Link.."/ComicList/Newest?page="..l,g)end;function RComicOnlineTo:getPopularManga(l,g)self:getManga(self.Link.."/ComicList/MostPopular?page="..l,g)end;function RComicOnlineTo:searchManga(m,n,g)self:getManga({Link=self.Link.."/Search/Comic",PostData="keyword="..m,HttpMethod=POST_METHOD},g)g.NoPages=true end;function RComicOnlineTo:getChapters(o,g)local h=d(self.Link..o.Link)local p=h:match('<span class="info">Summary:</span>.-<p[^>]->(.-)</p>')or""if string.upper(p)~="N/A"then g.Description=a(p)end;local q={}for j,k in h:gmatch('<td>[^<]-<a[^>]-href="/Comic/[^/]-(/[^"]-)"[^>]->[ \n\r]+(.-)</a>')do q[#q+1]={Name=a(k),Link=j,Pages={},Manga=o}end;for r=#q,1,-1 do g[#g+1]=q[r]end end;function RComicOnlineTo:prepareChapter(s,g)local h=d(self.Link..s.Manga.Link..s.Link)for j in h:gmatch('lstImages%.push%("(.-)"%)')do g[#g+1]=j:gsub("\\/","/")end end;function RComicOnlineTo:loadChapterPage(e,g)g.Link=e end
+RComicOnlineTo = Parser:new("ReadComicOnline.to", "https://readcomiconline.li", "ENG", "RCOMICONLINETOENG", 3)
+
+local function stringify(string)
+	return string:gsub(
+		"&#([^;]-);",
+		function(a)
+			local number = tonumber("0" .. a) or tonumber(a)
+			return number and u8c(number) or "&#" .. a .. ";"
+		end
+	):gsub(
+		"&(.-);",
+		function(a)
+			return HTML_entities and HTML_entities[a] and u8c(HTML_entities[a]) or "&" .. a .. ";"
+		end
+	)
+end
+
+local function downloadContent(link)
+	local f = {}
+	Threads.insertTask(
+		f,
+		{
+			Type = "StringRequest",
+			Link = link,
+			Table = f,
+			Index = "text"
+		}
+	)
+	while Threads.check(f) do
+		coroutine.yield(false)
+	end
+	return f.text or ""
+end
+
+function RComicOnlineTo:getManga(link, dt)
+	local content = downloadContent(link)
+
+	for ImageLink, Link, Name in content:gmatch('td title=\'[^<]-<img[^>]-src="([^"]-)".-href="([^"]-)">(.-)</a>') do
+		if not ImageLink:find("^http") then
+			ImageLink = self.Link .. ImageLink
+		end
+		dt[#dt + 1] = CreateManga(stringify(Name), Link, ImageLink, self.ID, self.Link .. Link)
+		dt.NoPages = false
+		coroutine.yield(false)
+	end
+end
+
+function RComicOnlineTo:getLatestManga(page, dt)
+	self:getManga(self.Link .. "/ComicList/Newest?page=" .. page, dt)
+end
+
+function RComicOnlineTo:getPopularManga(page, dt)
+	self:getManga(self.Link .. "/ComicList/MostPopular?page=" .. page, dt)
+end
+
+function RComicOnlineTo:searchManga(search, _, dt)
+	self:getManga({Link = self.Link .. "/Search/Comic", PostData = "keyword=" .. search, HttpMethod = POST_METHOD}, dt)
+	dt.NoPages = true
+end
+
+function RComicOnlineTo:getChapters(manga, dt)
+	local content = downloadContent(self.Link .. manga.Link)
+	local description = content:match('<span class="info">Summary:</span>.-<p[^>]->(.-)</p>') or ""
+	if string.upper(description) ~= "N/A" then
+		dt.Description = stringify(description)
+	end
+	local t = {}
+	for Link, Name in content:gmatch('<td>[^<]-<a[^>]-href="/Comic/[^/]-(/[^"]-)"[^>]->[ \n\r]+(.-)</a>') do
+		t[#t + 1] = {
+			Name = stringify(Name),
+			Link = Link,
+			Pages = {},
+			Manga = manga
+		}
+	end
+	for i = #t, 1, -1 do
+		dt[#dt + 1] = t[i]
+	end
+end
+
+function RComicOnlineTo:prepareChapter(chapter, dt)
+	local content = downloadContent(self.Link .. chapter.Manga.Link .. chapter.Link)
+	for Link in content:gmatch('lstImages%.push%("(.-)"%)') do
+		dt[#dt + 1] = Link:gsub("\\/", "/")
+	end
+end
+
+function RComicOnlineTo:loadChapterPage(link, dt)
+	dt.Link = link
+end

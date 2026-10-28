@@ -1,1 +1,88 @@
-HentaiRead=Parser:new("HentaiRead","https://hentairead.com","DIF","HENREADDIF",4)HentaiRead.NSFW=true;local function a(b)return b:gsub("&#([^;]-);",function(c)local d=tonumber("0"..c)or tonumber(c)return d and u8c(d)or"&#"..c..";"end):gsub("&(.-);",function(c)return HTML_entities and HTML_entities[c]and u8c(HTML_entities[c])or"&"..c..";"end)end;local function e(f)local g={}Threads.insertTask(g,{Type="StringRequest",Link=f,Table=g,Index="text"})while Threads.check(g)do coroutine.yield(false)end;return g.text or""end;function HentaiRead:getManga(f,h,i)local j=e(f)h.NoPages=true;local k='manga%-item__img.-alt="([^"]+)"[^>]*src="([^"]+)".-/hentai/([^/]+)/'for l,m,n in j:gmatch(k)do h[#h+1]=CreateManga(a(l),n,m,self.ID,self.Link.."/hentai/"..n)h.NoPages=false;coroutine.yield(false)end end;function HentaiRead:getLatestManga(o,h)self:getManga(self.Link.."/hentai/page/"..o.."/?m_orderby=latest&m_order=desc",h)end;function HentaiRead:getPopularManga(o,h)self:getManga(self.Link.."/hentai/page/"..o.."/?m_orderby=views&m_order=desc",h)end;function HentaiRead:searchManga(p,o,h)self:getManga(self.Link.."/page/"..o.."/?s="..p.."&post_type=wp-manga&verified=1",h,true)end;function HentaiRead:getChapters(q,h)h[#h+1]={Name="Read chapter",Link=q.Link,Pages={},Manga=q}end;function HentaiRead:prepareChapter(r,h)local j=e(self.Link.."/hentai/"..r.Link.."/english")local s,t=j:match('"currentId"%s*:%s*(%d*).-"chapterId"%s*:%s*(%d*)')local u=j:match('Page 1 of (%d*)')print(s,t,u)for v=1,u do h[#h+1]={Link="https://henread.xyz/"..s.."/"..t..("/hr_%04d.jpg"):format(v),Header1="Referer: "..self.Link}end end;function HentaiRead:loadChapterPage(f,h)h.Link=f end
+HentaiRead = Parser:new("HentaiRead", "https://hentairead.com", "DIF", "HENREADDIF", 4)
+
+HentaiRead.NSFW = true
+
+local function stringify(string)
+	return string:gsub(
+		"&#([^;]-);",
+		function(a)
+			local number = tonumber("0" .. a) or tonumber(a)
+			return number and u8c(number) or "&#" .. a .. ";"
+		end
+	):gsub(
+		"&(.-);",
+		function(a)
+			return HTML_entities and HTML_entities[a] and u8c(HTML_entities[a]) or "&" .. a .. ";"
+		end
+	)
+end
+
+local function downloadContent(link)
+	local f = {}
+	Threads.insertTask(
+		f,
+		{
+			Type = "StringRequest",
+			Link = link,
+			Table = f,
+			Index = "text"
+		}
+	)
+	while Threads.check(f) do
+		coroutine.yield(false)
+	end
+	return f.text or ""
+end
+
+function HentaiRead:getManga(link, dt, is_search)
+	local content = downloadContent(link)
+	dt.NoPages = true
+	local regex = 'manga%-item__img.-alt="([^"]+)"[^>]*src="([^"]+)".-/hentai/([^/]+)/'
+
+	for Name, ImageLink, Link in content:gmatch(regex) do
+		dt[#dt + 1] = CreateManga(stringify(Name), Link, ImageLink, self.ID, self.Link .. "/hentai/" .. Link)
+		dt.NoPages = false
+		coroutine.yield(false)
+	end
+end
+
+function HentaiRead:getLatestManga(page, dt)
+	self:getManga(self.Link .. "/hentai/page/" .. page .. "/?m_orderby=latest&m_order=desc", dt)
+end
+
+function HentaiRead:getPopularManga(page, dt)
+	self:getManga(self.Link .. "/hentai/page/" .. page .. "/?m_orderby=views&m_order=desc", dt)
+end
+
+function HentaiRead:searchManga(search, page, dt)
+	self:getManga(self.Link .. "/page/" .. page .. "/?s=" .. search .. "&post_type=wp-manga&verified=1", dt, true)
+end
+
+function HentaiRead:getChapters(manga, dt)
+	dt[#dt + 1] = {
+		Name = "Read chapter",
+		Link = manga.Link,
+		Pages = {},
+		Manga = manga
+	}
+end
+
+function HentaiRead:prepareChapter(chapter, dt)
+	local content = downloadContent(self.Link .. "/hentai/" .. chapter.Link .. "/english")
+
+	local current_id, chapter_id = content:match('"currentId"%s*:%s*(%d*).-"chapterId"%s*:%s*(%d*)')
+	local page_count = content:match('Page 1 of (%d*)')
+
+	print(current_id, chapter_id, page_count)
+
+	for i = 1, page_count do
+		dt[#dt + 1] = {
+			Link = "https://henread.xyz/" .. current_id .. "/" .. chapter_id .. ("/hr_%04d.jpg"):format(i),
+			Header1 = "Referer: " .. self.Link
+		}
+	end
+end
+
+function HentaiRead:loadChapterPage(link, dt)
+	dt.Link = link
+end

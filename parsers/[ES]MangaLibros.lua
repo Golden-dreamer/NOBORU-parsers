@@ -1,1 +1,101 @@
-MangaLibros=Parser:new("MangaLibros","http://mangalibros.com","ESP","MANGALIBROSESP",1)local function a(b)return b:gsub("&#([^;]-);",function(c)local d=tonumber("0"..c)or tonumber(c)return d and u8c(d)or"&#"..c..";"end):gsub("&(.-);",function(c)return HTML_entities and HTML_entities[c]and u8c(HTML_entities[c])or"&"..c..";"end)end;local function e(b)return b:gsub("\\u(....)",function(c)return u8c(tonumber("0x"..c))end)end;local function f(g)local h={}Threads.insertTask(h,{Type="StringRequest",Link=g,Table=h,Index="text"})while Threads.check(h)do coroutine.yield(false)end;return h.text or""end;function MangaLibros:getManga(g,i)local j=f(g)i.NoPages=true;for k,l,m in j:gmatch('<a href="[^"]-/manga/([^"]-)" class="thumbnail">[^>]-src=\'([^\']-)\' alt=\'([^\']-)\'>[^<]-</a>')do i[#i+1]=CreateManga(a(m),k,l,self.ID,k)i.NoPages=false;coroutine.yield(false)end end;function MangaLibros:getPopularManga(n,i)self:getManga(self.Link.."/filterList?page="..n.."&cat=&alpha=&sortBy=views&asc=true&author=&tag=",i)end;function MangaLibros:getAZManga(n,i)self:getManga(self.Link.."/filterList?page="..n.."&cat=&alpha=&sortBy=name&asc=true&author=&tag=",i)end;function MangaLibros:searchManga(o,p,i)local j=f(self.Link.."/search?query="..o)for m,k in j:gmatch('"value":"([^"]-)","data":"([^"]-)"')do i[#i+1]=CreateManga(e(m),k,self.Link.."/uploads/manga/"..k.."/cover/cover_250x350.jpg",self.ID,k)coroutine.yield(false)end;i.NoPages=true end;function MangaLibros:getChapters(q,i)local j=f(self.Link.."/manga/"..q.Link)local r={}local s=(j:match('class="well">(.-)</div>')or""):gsub("^\n*",""):gsub("\n*$",""):gsub("<[^>]->","")i.Description=a(s or"")for k,m,t in j:gmatch('class="chapter%-title%-.-href="[^"]-/manga/([^"]-)">([^<]-)</a>(.-)</h5>')do t=t or""r[#r+1]={Name=a(m..t):gsub("<[^>]->",""):gsub("%s+"," "),Link=k,Pages={},Manga=q}end;for u=#r,1,-1 do i[#i+1]=r[u]end end;function MangaLibros:prepareChapter(v,i)local j=f(self.Link.."/manga/"..v.Link)for k in j:gmatch('"page_image":"\\/image\\/([^"]-)"')do i[#i+1]={Link=self.Link.."/image/"..k,Header1="Referer: "..self.Link}end end;function MangaLibros:loadChapterPage(g,i)i.Link=g end
+MangaLibros = Parser:new("MangaLibros", "http://mangalibros.com", "ESP", "MANGALIBROSESP", 1)
+
+local function stringify(string)
+	return string:gsub(
+		"&#([^;]-);",
+		function(a)
+			local number = tonumber("0" .. a) or tonumber(a)
+			return number and u8c(number) or "&#" .. a .. ";"
+		end
+	):gsub(
+		"&(.-);",
+		function(a)
+			return HTML_entities and HTML_entities[a] and u8c(HTML_entities[a]) or "&" .. a .. ";"
+		end
+	)
+end
+
+local function stringify2(string)
+	return string:gsub(
+		"\\u(....)",
+		function(a)
+			return u8c(tonumber("0x" .. a))
+		end
+	)
+end
+
+local function downloadContent(link)
+	local f = {}
+	Threads.insertTask(
+		f,
+		{
+			Type = "StringRequest",
+			Link = link,
+			Table = f,
+			Index = "text"
+		}
+	)
+	while Threads.check(f) do
+		coroutine.yield(false)
+	end
+	return f.text or ""
+end
+
+function MangaLibros:getManga(link, dt)
+	local content = downloadContent(link)
+	dt.NoPages = true
+	for Link, ImageLink, Name in content:gmatch('<a href="[^"]-/manga/([^"]-)" class="thumbnail">[^>]-src=\'([^\']-)\' alt=\'([^\']-)\'>[^<]-</a>') do
+		dt[#dt + 1] = CreateManga(stringify(Name), Link, ImageLink, self.ID, Link)
+		dt.NoPages = false
+		coroutine.yield(false)
+	end
+end
+
+function MangaLibros:getPopularManga(page, dt)
+	self:getManga(self.Link .. "/filterList?page=" .. page .. "&cat=&alpha=&sortBy=views&asc=true&author=&tag=", dt)
+end
+function MangaLibros:getAZManga(page, dt)
+	self:getManga(self.Link .. "/filterList?page=" .. page .. "&cat=&alpha=&sortBy=name&asc=true&author=&tag=", dt)
+end
+
+function MangaLibros:searchManga(search, _, dt)
+	local content = downloadContent(self.Link .. "/search?query=" .. search)
+	for Name, Link in content:gmatch('"value":"([^"]-)","data":"([^"]-)"') do
+		dt[#dt + 1] = CreateManga(stringify2(Name), Link, self.Link .. "/uploads/manga/" .. Link .. "/cover/cover_250x350.jpg", self.ID, Link)
+		coroutine.yield(false)
+	end
+	dt.NoPages = true
+end
+
+function MangaLibros:getChapters(manga, dt)
+	local content = downloadContent(self.Link .. "/manga/" .. manga.Link)
+	local t = {}
+	local description = (content:match('class="well">(.-)</div>') or ""):gsub("^\n*", ""):gsub("\n*$", ""):gsub("<[^>]->", "")
+	dt.Description = stringify(description or "")
+	for Link, Name, SubName in content:gmatch('class="chapter%-title%-.-href="[^"]-/manga/([^"]-)">([^<]-)</a>(.-)</h5>') do
+		SubName = SubName or ""
+		t[#t + 1] = {
+			Name = stringify(Name .. SubName):gsub("<[^>]->", ""):gsub("%s+", " "),
+			Link = Link,
+			Pages = {},
+			Manga = manga
+		}
+	end
+	for i = #t, 1, -1 do
+		dt[#dt + 1] = t[i]
+	end
+end
+
+function MangaLibros:prepareChapter(chapter, dt)
+	local content = downloadContent(self.Link .. "/manga/" .. chapter.Link)
+	for Link in content:gmatch('"page_image":"\\/image\\/([^"]-)"') do
+		dt[#dt + 1] = {
+			Link = self.Link .. "/image/" .. Link,
+			Header1 = "Referer: " .. self.Link
+		}
+	end
+end
+
+function MangaLibros:loadChapterPage(link, dt)
+	dt.Link = link
+end
