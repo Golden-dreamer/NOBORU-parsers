@@ -1,4 +1,4 @@
-HentaiReadMoe=Parser:new('HentaiRead.moe','https://hentairead.moe','DIF','HENTAIREADMOE',2)
+HentaiReadMoe=Parser:new('HentaiRead.moe','https://hentairead.moe','DIF','HENTAIREADMOE',3)
 HentaiReadMoe.NSFW=true
 HentaiReadMoe.RandomBatchSize=1
 local P=HentaiReadMoe
@@ -26,7 +26,7 @@ end
 
 local function primary(html)
     assert(html:find('</html>',1,true),'HentaiRead: incomplete page response')
-    -- Related-gallery cards must not contribute tags to the current gallery.
+    -- Keep related-gallery cards out of the current gallery metadata.
     return html:match('^(.-)<article[%s>]') or html
 end
 
@@ -83,6 +83,28 @@ local function appendGallery(dest,url,seen)
     return true
 end
 
+-- Catalogue cards already contain everything needed to display an entry.
+-- Fetch full gallery metadata only when opening its chapters (or Random).
+local function appendCard(dest,block,url,seen)
+    url=galleryURL(url)
+    if seen[url] then return end
+    local name,cover
+    for tag in block:gmatch('<img%s[^>]*>') do
+        local src=U.attr(tag,'data%-src') or U.attr(tag,'src')
+        if src and absolute(src):match('^https://readimg%.site/galleries/') then
+            cover=absolute(src)
+            name=U.attr(tag,'alt')
+            break
+        end
+    end
+    local heading=block:match('<h[1-6][^>]*>(.-)</h[1-6]>')
+    name=U.text(heading or name or '')
+    assert(name~='' and cover,'HentaiRead: catalogue card metadata unavailable')
+    seen[url]=true
+    dest[#dest+1]=CreateManga(name,U.path(url),imageLink(cover),P.ID,url)
+    coroutine.yield(false)
+end
+
 local function cards(html,dest,latest)
     local content=html
     if latest then
@@ -96,7 +118,7 @@ local function cards(html,dest,latest)
         count=count+1
         local href=block:match('<a[^>]-href="(https://hentairead%.moe/hentai/[^"/?]+)"')
         if href then
-            appendGallery(dest,href,seen)
+            appendCard(dest,block,href,seen)
         end
     end
     assert(count>0 or html:lower():find('no results',1,true) or html:lower():find('no manga',1,true) or html:lower():find('no hentai',1,true),
